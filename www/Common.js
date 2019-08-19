@@ -220,9 +220,45 @@ function getDivRect(div) {
   };
 }
 
+var ignoreClass = [
+  'scrollable',
+  'ignore-map'
+];
+
+var notIgnoreClass = [
+  'forced-not-ignore-map'
+];
+
 var ignoreTags = [
   'pre', 'textarea', 'p', 'form', 'input', 'caption', 'canvas', 'svg'
 ];
+
+function testClass(node, cls) {
+  if(!Array.isArray(cls)) {
+    cls = [cls];
+  }
+  var classNames = (node.className || '').split(' ');
+  for(var i = 0; i < cls.length; i++) {
+    if (classNames.indexOf(cls[i]) > -1) {
+        return true;
+    }
+  }
+  return false;
+}
+
+function filterChildrenNodeByClass(node, cls, forceCls) {
+  let notFollow = testClass(node, cls);
+  if(notFollow) {
+    if(forceCls) {
+      if(!testClass(node, forceCls)) {
+        return true;
+      }
+    }
+    return true
+  }
+
+  return node.parentNode ? filterChildrenNodeByClass(node.parentNode, cls, forceCls) : false;
+}
 
 function shouldWatchByNative(node) {
   if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.parentNode || node instanceof SVGElement) {
@@ -240,6 +276,10 @@ function shouldWatchByNative(node) {
   var classNames = (node.className || '').split(' ');
   if (classNames.indexOf('_gmaps_cdv_') > -1) {
     return true;
+  }
+
+  if(filterChildrenNodeByClass(node, ignoreClass, notIgnoreClass)) {
+    return false;
   }
 
   var visibilityCSS = getStyle(node, 'visibility');
@@ -265,6 +305,7 @@ function shouldWatchByNative(node) {
   return displayCSS !== 'none' &&
     visibilityCSS !== 'hidden';
 }
+
 
 // Get z-index order
 // http://stackoverflow.com/a/24136505
