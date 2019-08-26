@@ -125,7 +125,7 @@ public class PluginMarkerCluster extends PluginMarker {
                     int count = iconCacheKeys.get(cacheKey);
                     if (count < 1) {
                       iconCacheKeys.remove(cacheKey);
-                      AsyncLoadImage.removeBitmapFromMemCahce(cacheKey);
+                      AsyncLoadImage.removeBitmapFromMemCache(cacheKey);
                     } else {
                       iconCacheKeys.put(cacheKey, count - 1);
                     }
@@ -181,7 +181,7 @@ public class PluginMarkerCluster extends PluginMarker {
             int count = iconCacheKeys.get(cacheKey);
             if (count < 1) {
               iconCacheKeys.remove(cacheKey);
-              AsyncLoadImage.removeBitmapFromMemCahce(cacheKey);
+              AsyncLoadImage.removeBitmapFromMemCache(cacheKey);
             } else {
               iconCacheKeys.put(cacheKey, count - 1);
             }

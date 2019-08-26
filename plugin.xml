@@ -160,6 +160,24 @@
       <feature name="PluginMap">
         <param name="android-package" value="plugin.google.maps.PluginMap"/>
       </feature>
+      <feature name="MapElementInterface">
+        <param name="android-package" value="plugin.google.maps.MapElementInterface"/>
+      </feature>
+      <feature name="Simplify">
+        <param name="android-package" value="plugin.google.maps.Simplify"/>
+      </feature>
+      <feature name="PolyUtil">
+        <param name="android-package" value="plugin.google.maps.PolyUtil"/>
+      </feature>
+      <feature name="SphericalUtil">
+        <param name="android-package" value="plugin.google.maps.SphericalUtil"/>
+      </feature>
+      <feature name="MathUtil">
+        <param name="android-package" value="plugin.google.maps.MathUtil"/>
+      </feature>
+      <feature name="AbortableCountDownLatch">
+        <param name="android-package" value="plugin.google.maps.AbortableCountDownLatch"/>
+      </feature>
       <feature name="PluginPolyline">
         <param name="android-package" value="plugin.google.maps.PluginPolyline"/>
       </feature>
@@ -223,6 +241,14 @@
     <source-file src="src/android/plugin/google/maps/PluginMarkerCluster.java" target-dir="src/plugin/google/maps"/>
     <source-file src="src/android/plugin/google/maps/PluginStreetViewPanorama.java" target-dir="src/plugin/google/maps"/>
     <source-file src="src/android/plugin/google/maps/IPluginView.java" target-dir="src/plugin/google/maps"/>
+
+    <source-file src="src/android/plugin/google/maps/MapElementInterface.java" target-dir="src/plugin/google/maps"/>
+    <source-file src="src/android/plugin/google/maps/Simplify.java" target-dir="src/plugin/google/maps"/>
+    <source-file src="src/android/plugin/google/maps/PolyUtil.java" target-dir="src/plugin/google/maps"/>
+    <source-file src="src/android/plugin/google/maps/SphericalUtil.java" target-dir="src/plugin/google/maps"/>
+    <source-file src="src/android/plugin/google/maps/MathUtil.java" target-dir="src/plugin/google/maps"/>
+    <source-file src="src/android/plugin/google/maps/AbortableCountDownLatch.java" target-dir="src/plugin/google/maps"/>
+
 
     <framework src="src/android/frameworks/tbxml-android.gradle" custom="true" type="gradleReference"/>
     <resource-file src="src/android/frameworks/tbxml-android.aar" target="libs/tbxml-android.aar"/>

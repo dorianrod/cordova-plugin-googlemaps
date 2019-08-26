@@ -1,30 +1,76 @@
 
 
-var utils = require('cordova/utils'),
-  cordova_exec = require('cordova/exec'),
+  var utils = require('cordova/utils'),
   common = require('./Common'),
   Overlay = require('./Overlay'),
-  BaseClass = require('./BaseClass'),
-  BaseArrayClass = require('./BaseArrayClass'),
   LatLng = require('./LatLng'),
   MapTypeId = require('./MapTypeId'),
   event = require('./event'),
   VisibleRegion = require('./VisibleRegion'),
   Marker = require('./Marker'),
-  Circle = require('./Circle'),
-  Polyline = require('./Polyline'),
-  Polygon = require('./Polygon'),
-  TileOverlay = require('./TileOverlay'),
-  GroundOverlay = require('./GroundOverlay'),
-  KmlOverlay = require('./KmlOverlay'),
-  KmlLoader = require('./KmlLoader'),
-  MarkerCluster = require('./MarkerCluster');
+  Polyline = require('./Polyline');
+
+var ObjectQueue = function() {
+  this.queue = {};
+}
+ObjectQueue.prototype.addObject = function(type, obj) {
+  var list = this.queue[type] || [];
+  list.push(obj);
+  this.queue[type] = list;
+}
+ObjectQueue.prototype.removeObject = function(type, id) {
+  var i = this.getObjIndex(type, {
+    __pgmId: id 
+  });
+
+  var data = {
+    __pgmId: id,
+    _removed: true
+  }
+
+  var list = this.queue[type] || [];
+  if(i != null) {
+    list[i] = data;
+  } else {
+    list.push(data);
+    this.queue[type] = list;
+  }
+}
+ObjectQueue.prototype.getObjIndex = function(type, obj) {
+  let list = this.queue[type] || [];
+  for(var i = 0; i < list.length; i++) {
+    if(list[i].__pgmId === obj.__pgmId && obj.__pgmId) {
+      return i;
+    }
+  }
+  return null;
+}
+ObjectQueue.prototype.updateObject = function(type, obj) {
+  var i = this.getObjIndex(type, obj);
+  if(i != null) {
+    let list = this.queue[type] || [];
+    if(!list[i]._removed) {
+      list[i] = Object.assign(list[i], obj);
+    }
+  } else {
+    this.addObject(type, obj);
+  }
+}
+ObjectQueue.prototype.clear = function(type, obj) {
+  this.queue = {};
+}
+ObjectQueue.prototype.get = function() {
+  let queue = Object.assign({}, this.queue);
+  this.clear();
+  return queue;
+}
+
 
 /**
  * Google Maps model.
  */
 var exec;
-var Map = function(__pgmId, _exec) {
+var Map = function(__pgmId, _exec, opts) {
   var self = this;
   exec = _exec;
   Overlay.call(self, self, {}, 'Map', _exec, {
@@ -32,6 +78,7 @@ var Map = function(__pgmId, _exec) {
   });
   delete self.map;
 
+  this.objectsQueue = new ObjectQueue();
 
   self.set('myLocation', false);
   self.set('myLocationButton', false);
@@ -67,6 +114,10 @@ var Map = function(__pgmId, _exec) {
     }
     self.exec.call(self, null, null, self.__pgmId, 'setActiveMarkerId', [newMarkerId]);
   });
+
+  let debounceV = (opts ? opts.debounce : 0) || 200;
+
+  self.batchQueue = common.debounce(self.batchQueue, debounceV, false, self);
 };
 
 utils.extend(Map, Overlay);
@@ -305,6 +356,7 @@ Map.prototype.setOptions = function(options) {
 Map.prototype.getMyLocation = function(params, success_callback, error_callback) {
   return window.plugin.google.maps.LocationService.getMyLocation.call(this, params, success_callback, error_callback);
 };
+
 
 Map.prototype.setCameraTarget = function(latLng) {
   this.set('camera_target', latLng);
@@ -681,23 +733,6 @@ Map.prototype.remove = function(callback) {
   });
 
   self.trigger('remove');
-  // var div = self.get('div');
-  // if (div) {
-  //   while (div) {
-  //     if (div.style) {
-  //       div.style.backgroundColor = '';
-  //     }
-  //     if (div.classList) {
-  //       div.classList.remove('_gmaps_cdv_');
-  //     } else if (div.className) {
-  //       div.className = div.className.replace(/_gmaps_cdv_/g, '');
-  //       div.className = div.className.replace(/\s+/g, ' ');
-  //     }
-  //     div = div.parentNode;
-  //   }
-  // }
-  // self.set('div', undefined);
-
 
   // Close the active infoWindow
   var active_marker = self.get('active_marker');
@@ -989,441 +1024,204 @@ Map.prototype.setPadding = function(p1, p2, p3, p4) {
 };
 
 
-Map.prototype.addKmlOverlay = function(kmlOverlayOptions, callback) {
-  var self = this;
-  kmlOverlayOptions = kmlOverlayOptions || {};
-  kmlOverlayOptions.url = kmlOverlayOptions.url || null;
-  kmlOverlayOptions.clickable = common.defaultTrueOption(kmlOverlayOptions.clickable);
-  kmlOverlayOptions.suppressInfoWindows = kmlOverlayOptions.suppressInfoWindows === true;
 
-  if (kmlOverlayOptions.url) {
-
-    var link = document.createElement('a');
-    link.href = kmlOverlayOptions.url;
-    kmlOverlayOptions.url = link.protocol+'//'+link.host+link.pathname + link.search;
-
-    var invisible_dot = self.get('invisible_dot');
-    if (!invisible_dot || invisible_dot._isRemoved) {
-      // Create an invisible marker for kmlOverlay
-      self.set('invisible_dot', self.addMarker({
-        position: {
-          lat: 0,
-          lng: 0
-        },
-        icon: 'skyblue',
-        visible: false
-      }));
-    }
-    if ('icon' in kmlOverlayOptions) {
-      self.get('invisible_dot').setIcon(kmlOverlayOptions.icon);
-    }
-
-    var resolver = function(resolve, reject) {
-
-      var loader = new KmlLoader(self, self.exec, kmlOverlayOptions);
-      loader.parseKmlFile(function(camera, kmlData) {
-        if (kmlData instanceof BaseClass) {
-          kmlData = new BaseArrayClass([kmlData]);
-        }
-        var kmlId = 'kmloverlay_' + Math.floor(Math.random() * Date.now());
-        var kmlOverlay = new KmlOverlay(self, kmlId, camera, kmlData, kmlOverlayOptions);
-        self.OVERLAYS[kmlId] = kmlOverlay;
-        resolve.call(self, kmlOverlay);
-      }, reject);
-
-    };
-
-    if (typeof callback === 'function') {
-      resolver(callback, self.errorHandler);
-    } else {
-      return new Promise(resolver);
-    }
-  } else {
-
-    if (typeof callback === 'function') {
-      throw new Error('KML file url is required.');
-    } else {
-      return Promise.reject('KML file url is required.');
-    }
-  }
+Map.prototype.addObject = function(type, options) {
+  this.objectsQueue.addObject(type, options);
+  this.batchQueue();
+};
+Map.prototype.updateObject = function(type, obj) {
+  this.objectsQueue.updateObject(type, obj);
+  this.batchQueue();
+};
+Map.prototype.removeObject = function(type, obj) {
+  this.objectsQueue.removeObject(type, obj);
+  this.batchQueue();
 };
 
 
-//-------------
-// Ground overlay
-//-------------
-Map.prototype.addGroundOverlay = function(groundOverlayOptions, callback) {
-  var self = this;
-  groundOverlayOptions = groundOverlayOptions || {};
-  groundOverlayOptions.anchor = groundOverlayOptions.anchor || [0.5, 0.5];
-  groundOverlayOptions.bearing = 'bearing' in groundOverlayOptions ? groundOverlayOptions.bearing : 0;
-  groundOverlayOptions.url = groundOverlayOptions.url || null;
-  groundOverlayOptions.clickable = groundOverlayOptions.clickable === true;
-  groundOverlayOptions.visible = common.defaultTrueOption(groundOverlayOptions.visible);
-  groundOverlayOptions.zIndex = groundOverlayOptions.zIndex || 0;
-  groundOverlayOptions.bounds = common.convertToPositionArray(groundOverlayOptions.bounds);
-  groundOverlayOptions.noCaching = true;
 
-  var groundOverlay = new GroundOverlay(self, groundOverlayOptions, exec);
-  var groundOverlayId = groundOverlay.getId();
-  self.OVERLAYS[groundOverlayId] = groundOverlay;
-  groundOverlay.one(groundOverlayId + '_remove', function() {
-    groundOverlay.off();
-    delete self.OVERLAYS[groundOverlayId];
-    groundOverlay = undefined;
-  });
-
-  self.exec.call(self, function() {
-    groundOverlay._privateInitialize();
-    delete groundOverlay._privateInitialize;
-    if (typeof callback === 'function') {
-      callback.call(self, groundOverlay);
-    }
-  }, self.errorHandler, self.__pgmId, 'loadPlugin', ['GroundOverlay', groundOverlayOptions, groundOverlay.hashCode]);
-
-  return groundOverlay;
+Map.prototype.addPolyline = function(markerOptions) {
+  this.addObject("polylines", markerOptions);
 };
 
-//-------------
-// Tile overlay
-//-------------
-Map.prototype.addTileOverlay = function(tilelayerOptions, callback) {
-  var self = this;
-  tilelayerOptions = tilelayerOptions || {};
-  tilelayerOptions.tileUrlFormat = tilelayerOptions.tileUrlFormat || null;
-  if (typeof tilelayerOptions.tileUrlFormat === 'string') {
-    console.log('[deprecated] the tileUrlFormat property is now deprecated. Use the getTile property.');
-    tilelayerOptions.getTile = function(x, y, zoom) {
-      return tilelayerOptions.tileUrlFormat.replace(/<x>/gi, x)
-        .replace(/<y>/gi, y)
-        .replace(/<zoom>/gi, zoom);
-    };
-  }
-  if (typeof tilelayerOptions.getTile !== 'function') {
-    throw new Error('[error] the getTile property is required.');
-  }
-  tilelayerOptions.visible = common.defaultTrueOption(tilelayerOptions.visible);
-  tilelayerOptions.zIndex = tilelayerOptions.zIndex || 0;
-  tilelayerOptions.tileSize = tilelayerOptions.tileSize || 512;
-  tilelayerOptions.opacity = (tilelayerOptions.opacity === null || tilelayerOptions.opacity === undefined) ? 1 : tilelayerOptions.opacity;
-  tilelayerOptions.debug = tilelayerOptions.debug === true;
-  tilelayerOptions.userAgent = tilelayerOptions.userAgent || navigator.userAgent;
+function preparePolyline(map, polylineOptions) {
+  var self = map;
+  var polyline;
+  var id = polylineOptions.__pgmId;
 
+  if(!id) {
+    polylineOptions.points = polylineOptions.points || [];
+    var _orgs = polylineOptions.points;
+    
+    polylineOptions.points = common.convertToPositionArray(polylineOptions.points);
+    polylineOptions.strokeColor = common.HTMLColor2RGBA(polylineOptions.strokeColor || '#FF000080', 0.75);
+    polylineOptions.strokeWidth = 'strokeWidth' in polylineOptions ? polylineOptions.strokeWidth : 10;
+    polylineOptions.visible = common.defaultTrueOption(polylineOptions.visible);
+    polylineOptions.clickable = polylineOptions.clickable === true;
+    polylineOptions.zIndex = polylineOptions.zIndex || 0;
+    polylineOptions.geodesic = polylineOptions.geodesic === true;
 
-  var tileOverlay = new TileOverlay(self, tilelayerOptions, exec);
-  var tileOverlayId = tileOverlay.getId();
-  self.OVERLAYS[tileOverlayId] = tileOverlay;
-  var hashCode = tileOverlay.hashCode;
+  //  var opts = JSON.parse(JSON.stringify(polylineOptions));
+    polylineOptions.points = _orgs;
+    polyline = new Polyline(self, polylineOptions, exec);
+    var polylineId = polyline.getId();
+    self.OVERLAYS[polylineId] = polyline;
 
-  tileOverlay.one(tileOverlayId + '_remove', function() {
-    document.removeEventListener(tileOverlayId + '-' + hashCode + '-tileoverlay', onNativeCallback);
-    tileOverlay.off();
-    delete self.OVERLAYS[tileOverlayId];
-    tileOverlay = undefined;
-  });
-
-  var options = {
-    visible: tilelayerOptions.visible,
-    zIndex: tilelayerOptions.zIndex,
-    tileSize: tilelayerOptions.tileSize,
-    opacity: tilelayerOptions.opacity,
-    userAgent: tilelayerOptions.userAgent,
-    debug: tilelayerOptions.debug
-  };
-
-  var onNativeCallback = function(params) {
-    var url = tilelayerOptions.getTile(params.x, params.y, params.zoom);
-    if (!url || url === '(null)' || url === 'undefined' || url === 'null') {
-      url = '(null)';
-    }
-    if (url instanceof Promise) {
-      common.promiseTimeout(5000, url)
-        .then(function(finalUrl) {
-          cordova_exec(null, self.errorHandler, self.__pgmId + '-tileoverlay', 'onGetTileUrlFromJS', [hashCode, params.key, finalUrl]);
-        })
-        .catch(function() {
-          cordova_exec(null, self.errorHandler, self.__pgmId + '-tileoverlay', 'onGetTileUrlFromJS', [hashCode, params.key, '(null)']);
-        });
-    } else {
-      cordova_exec(null, self.errorHandler, self.__pgmId + '-tileoverlay', 'onGetTileUrlFromJS', [hashCode, params.key, url]);
-    }
-  };
-  document.addEventListener(self.__pgmId + '-' + hashCode + '-tileoverlay', onNativeCallback);
-
-  self.exec.call(self, function() {
-    tileOverlay._privateInitialize();
-    delete tileOverlay._privateInitialize;
-
-    if (typeof callback === 'function') {
-      callback.call(self, tileOverlay);
-    }
-  }, self.errorHandler, self.__pgmId, 'loadPlugin', ['TileOverlay', options, hashCode]);
-
-  return tileOverlay;
-};
-
-//-------------
-// Polygon
-//-------------
-Map.prototype.addPolygon = function(polygonOptions, callback) {
-  var self = this;
-  polygonOptions.points = polygonOptions.points || [];
-  var _orgs = polygonOptions.points;
-  polygonOptions.points = common.convertToPositionArray(polygonOptions.points);
-  polygonOptions.holes = polygonOptions.holes || [];
-  if (polygonOptions.holes.length > 0 && !Array.isArray(polygonOptions.holes[0])) {
-    polygonOptions.holes = [polygonOptions.holes];
-  }
-  polygonOptions.holes = polygonOptions.holes.map(function(hole) {
-    if (!utils.isArray(hole)) {
-      return [];
-    }
-    return hole.map(function(position) {
-      return {
-        'lat': position.lat,
-        'lng': position.lng
-      };
+    polyline.one(polylineId + '_remove', function() {
+      polyline.off();
+      delete self.OVERLAYS[polylineId];
+      polyline = undefined;
     });
-  });
-  polygonOptions.strokeColor = common.HTMLColor2RGBA(polygonOptions.strokeColor || '#FF000080', 0.75);
-  if (polygonOptions.fillColor) {
-    polygonOptions.fillColor = common.HTMLColor2RGBA(polygonOptions.fillColor || '#FF000080', 0.75);
+
   } else {
-    polygonOptions.fillColor = common.HTMLColor2RGBA('#FF000080', 0.75);
+    var polyline = self.OVERLAYS[id];
+    if(polyline) {
+      if(polylineOptions.strokeColor) {
+        polylineOptions.strokeColor = common.HTMLColor2RGBA(polylineOptions.strokeColor || '#FF000080', 0.75);
+      }
+    }
   }
-  polygonOptions.strokeWidth = 'strokeWidth' in polygonOptions ? polygonOptions.strokeWidth : 10;
-  polygonOptions.visible = common.defaultTrueOption(polygonOptions.visible);
-  polygonOptions.clickable = polygonOptions.clickable === true;
-  polygonOptions.zIndex = polygonOptions.zIndex || 0;
-  polygonOptions.geodesic = polygonOptions.geodesic === true;
-
-  var opts = JSON.parse(JSON.stringify(polygonOptions));
-  polygonOptions.points = _orgs;
-  var polygon = new Polygon(self, polygonOptions, exec);
-  var polygonId = polygon.getId();
-  self.OVERLAYS[polygonId] = polygon;
-  polygon.one(polygonId + '_remove', function() {
-    polygon.off();
-    delete self.OVERLAYS[polygonId];
-    polygon = undefined;
-  });
-
-  self.exec.call(self, function() {
-    polygon._privateInitialize();
-    delete polygon._privateInitialize;
-
-    if (typeof callback === 'function') {
-      callback.call(self, polygon);
-    }
-  }, self.errorHandler, self.__pgmId, 'loadPlugin', ['Polygon', opts, polygon.hashCode]);
-
-  return polygon;
-};
-
-//-------------
-// Polyline
-//-------------
-Map.prototype.addPolyline = function(polylineOptions, callback) {
-  var self = this;
-  polylineOptions.points = polylineOptions.points || [];
-  var _orgs = polylineOptions.points;
-  polylineOptions.points = common.convertToPositionArray(polylineOptions.points);
-  polylineOptions.color = common.HTMLColor2RGBA(polylineOptions.color || '#FF000080', 0.75);
-  polylineOptions.width = 'width' in polylineOptions ? polylineOptions.width : 10;
-  polylineOptions.visible = common.defaultTrueOption(polylineOptions.visible);
-  polylineOptions.clickable = polylineOptions.clickable === true;
-  polylineOptions.zIndex = polylineOptions.zIndex || 0;
-  polylineOptions.geodesic = polylineOptions.geodesic === true;
-
-  var opts = JSON.parse(JSON.stringify(polylineOptions));
-  polylineOptions.points = _orgs;
-  var polyline = new Polyline(self, polylineOptions, exec);
-  var polylineId = polyline.getId();
-  self.OVERLAYS[polylineId] = polyline;
-
-  polyline.one(polylineId + '_remove', function() {
-    polyline.off();
-    delete self.OVERLAYS[polylineId];
-    polyline = undefined;
-  });
-
-  self.exec.call(self, function() {
-    polyline._privateInitialize();
-    delete polyline._privateInitialize;
-
-    if (typeof callback === 'function') {
-      callback.call(self, polyline);
-    }
-  }, self.errorHandler, self.__pgmId, 'loadPlugin', ['Polyline', opts, polyline.hashCode]);
-
   return polyline;
+}
+
+function afterPolylineAdded(polyline, result, polylineOptions) {
+  if(polyline) polyline._privateInitialize(polylineOptions);
+  //delete polyline._privateInitialize;
+}
+
+
+
+
+
+
+Map.prototype.batchQueue = function(callback) {
+  this.batch(this.objectsQueue.get(), function() {
+    if(callback) callback.apply(this, arguments);
+    console.log("batchqueue", arguments);
+  });
 };
 
-//-------------
-// Circle
-//-------------
-Map.prototype.addCircle = function(circleOptions, callback) {
-  var self = this;
-  circleOptions.center = circleOptions.center || {};
-  circleOptions.center.lat = circleOptions.center.lat || 0.0;
-  circleOptions.center.lng = circleOptions.center.lng || 0.0;
-  circleOptions.strokeColor = common.HTMLColor2RGBA(circleOptions.strokeColor || '#FF0000', 0.75);
-  circleOptions.fillColor = common.HTMLColor2RGBA(circleOptions.fillColor || '#000000', 0.75);
-  circleOptions.strokeWidth = 'strokeWidth' in circleOptions ? circleOptions.strokeWidth : 10;
-  circleOptions.visible = common.defaultTrueOption(circleOptions.visible);
-  circleOptions.zIndex = circleOptions.zIndex || 0;
-  circleOptions.radius = 'radius' in circleOptions ? circleOptions.radius : 1;
+Map.prototype.batch = function(groups, callback) {
+  var map = this;
 
-  var circle = new Circle(self, circleOptions, exec);
-  var circleId = circle.getId();
-  self.OVERLAYS[circleId] = circle;
-  circle.one(circleId + '_remove', function() {
-    circle.off();
-    delete self.OVERLAYS[circleId];
-    circle = undefined;
+  var markersOptions     = groups.markers || [];
+  var polylinesOptions   = groups.polylines || [];
+
+  var markersOptionsById = {};
+  var polylinesOptionsById = {};
+
+  markersOptions.forEach(function(markerOpt) {
+    var marker = prepareMarker(map, markerOpt);
+    if(marker) {
+      markerOpt.hashCode = marker.hashCode;
+      markersOptionsById[marker.getId()] = markerOpt;
+    }
   });
 
-  self.exec.call(self, function() {
-    circle._privateInitialize();
-    delete circle._privateInitialize;
+  polylinesOptions.forEach(function(polylineOpt) {
+    var polyline = preparePolyline(map, polylineOpt);
+    if(polyline) {
+      polylineOpt.hashCode = polyline.hashCode;
+      polylinesOptionsById[polyline.getId()] = polylineOpt;
+    }
+  });
+
+  this.exec.call(map, function(result) {
+    let resMarkers = result.markers || [];
+    let resPolylines = result.polylines || [];
+
+    for(var k in resMarkers) {
+      var resMarker = resMarkers[k] || {};
+      var id        = resMarker.__pgmId;
+      var marker    = map.MARKERS[id];
+      if(marker) {
+        afterMarkerAdded(marker, resMarker, markersOptionsById[id]);
+      }
+    }
+
+    for(var k in resPolylines) {
+      var resPoly   = resPolylines[k] || {};
+      var id        = resPoly.__pgmId;
+      var polyline  = map.OVERLAYS[id];
+      if(polyline) {
+        afterPolylineAdded(polyline, resPoly, polylinesOptionsById[id]);
+      }
+    }
 
     if (typeof callback === 'function') {
-      callback.call(self, circle);
+      callback.call(self, result);
     }
-  }, self.errorHandler, self.__pgmId, 'loadPlugin', ['Circle', circleOptions, circle.hashCode]);
 
-  return circle;
-};
+  }, this.errorHandler, this.__pgmId, 'batch', [groups]);
+  return this;
+}
 
-//-------------
-// Marker
-//-------------
 
-Map.prototype.addMarker = function(markerOptions, callback) {
-  var self = this;
-  markerOptions = common.markerOptionsFilter(markerOptions);
 
-  //------------------------------------
-  // Generate a makrer instance at once.
-  //------------------------------------
-  markerOptions.icon = markerOptions.icon || {};
-  if (typeof markerOptions.icon === 'string' || Array.isArray(markerOptions.icon)) {
-    markerOptions.icon = {
-      url: markerOptions.icon
+
+
+function prepareMarker(map, markerOptions) {
+  var self = map;
+  var marker;
+  
+  var id = markerOptions.__pgmId;
+
+  if(!id) {
+    //------------------------------------
+    // Generate a makrer instance at once.
+    //------------------------------------
+    markerOptions = common.markerOptionsFilter(markerOptions);
+    markerOptions.icon = markerOptions.icon || {
+      url: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAeAB4AAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AL+AA//Z'
     };
+    if (typeof markerOptions.icon === 'string' || Array.isArray(markerOptions.icon)) {
+      markerOptions.icon = {
+        url: markerOptions.icon
+      };
+    }
+
+    marker = new Marker(self, markerOptions, exec);
+    var markerId = marker.getId();
+
+    self.MARKERS[markerId] = marker;
+    self.OVERLAYS[markerId] = marker;
+    marker.one(markerId + '_remove', function() {
+      delete self.MARKERS[markerId];
+      delete self.OVERLAYS[markerId];
+      marker.destroy();
+      marker = undefined;
+    });
+  } else {
+    var marker = self.MARKERS[id];
+    if(marker) {
+      if (typeof markerOptions.icon === 'string' || Array.isArray(markerOptions.icon)) {
+        markerOptions.icon = {
+          url: markerOptions.icon
+        };
+      }
+    }
   }
-
-  var marker = new Marker(self, markerOptions, exec);
-  var markerId = marker.getId();
-
-  self.MARKERS[markerId] = marker;
-  self.OVERLAYS[markerId] = marker;
-  marker.one(markerId + '_remove', function() {
-    delete self.MARKERS[markerId];
-    delete self.OVERLAYS[markerId];
-    marker.destroy();
-    marker = undefined;
-  });
-
-  self.exec.call(self, function(result) {
-
-    markerOptions.icon.size = markerOptions.icon.size || {};
-    markerOptions.icon.size.width = markerOptions.icon.size.width || result.width;
-    markerOptions.icon.size.height = markerOptions.icon.size.height || result.height;
-    markerOptions.icon.anchor = markerOptions.icon.anchor || [markerOptions.icon.size.width / 2, markerOptions.icon.size.height];
-
-    if (!markerOptions.infoWindowAnchor) {
-      markerOptions.infoWindowAnchor = [markerOptions.icon.size.width / 2, 0];
-    }
-    marker._privateInitialize(markerOptions);
-    delete marker._privateInitialize;
-
-    if (typeof callback === 'function') {
-      callback.call(self, marker);
-    }
-  }, self.errorHandler, self.__pgmId, 'loadPlugin', ['Marker', markerOptions, marker.hashCode]);
 
   return marker;
-};
+}
+function afterMarkerAdded(marker, result, markerOptions) {
+  if(marker) {
+    if(markerOptions.icon) {
+      markerOptions.icon.size         = markerOptions.icon.size || {};
+      markerOptions.icon.size.width   = markerOptions.icon.size.width || result.width;
+      markerOptions.icon.size.height  = markerOptions.icon.size.height || result.height;
+      markerOptions.icon.anchor       = markerOptions.icon.anchor || [markerOptions.icon.size.width / 2, markerOptions.icon.size.height]
+    };
 
-
-//------------------
-// Marker cluster
-//------------------
-Map.prototype.addMarkerCluster = function(markerClusterOptions, callback) {
-  var self = this;
-  if (typeof markerClusterOptions === 'function') {
-    callback = markerClusterOptions;
-    markerClusterOptions = null;
+    marker._privateInitialize(markerOptions);
+    //delete marker._privateInitialize;
   }
-  markerClusterOptions = markerClusterOptions || {};
-  var positionList = markerClusterOptions.markers.map(function(marker) {
-    return marker.position;
-  });
+}
 
-  var markerCluster = new MarkerCluster(self, {
-    'icons': markerClusterOptions.icons,
-    //'markerMap': markerMap,
-    'idxCount': positionList.length + 1,
-    'maxZoomLevel': Math.min(markerClusterOptions.maxZoomLevel || 15, 18),
-    'debug': markerClusterOptions.debug === true,
-    'boundsDraw': common.defaultTrueOption(markerClusterOptions.boundsDraw)
-  }, exec);
-  var markerClusterId = markerCluster.getId();
-  self.OVERLAYS[markerClusterId] = markerCluster;
-
-  self.exec.call(self, function(result) {
-
-    result.geocellList.forEach(function(geocell, idx) {
-      var markerOptions = markerClusterOptions.markers[idx];
-      markerOptions = common.markerOptionsFilter(markerOptions);
-
-      markerOptions._cluster = {
-        isRemoved: false,
-        isAdded: false,
-        geocell: geocell
-      };
-      markerCluster.addMarker(markerOptions);
-
-      //self.MARKERS[marker.getId()] = marker;
-      //self.OVERLAYS[marker.getId()] = marker;
-    });
-
-
-    markerCluster.one('remove', function() {
-      delete self.OVERLAYS[result.__pgmId];
-      /*
-            result.geocellList.forEach(function(geocell, idx) {
-              var markerOptions = markerClusterOptions.markers[idx];
-              var markerId = result.__pgmId + '-' + (markerOptions.__pgmId || 'marker_' + idx);
-              var marker = self.MARKERS[markerId];
-              if (marker) {
-                marker.off();
-              }
-              //delete self.MARKERS[markerId];
-              delete self.OVERLAYS[markerId];
-            });
-      */
-      markerCluster.destroy();
-    });
-
-    markerCluster._privateInitialize();
-    delete markerCluster._privateInitialize;
-
-    markerCluster._triggerRedraw.call(markerCluster, {
-      force: true
-    });
-
-    if (typeof callback === 'function') {
-      callback.call(self, markerCluster);
-    }
-  }, self.errorHandler, self.__pgmId, 'loadPlugin', ['MarkerCluster', {
-    'positionList': positionList,
-    'debug': markerClusterOptions.debug === true
-  }, markerCluster.hashCode]);
-
-  return markerCluster;
+Map.prototype.addMarker = function(markerOptions) {
+  this.addObject("markers", markerOptions);
 };
+
 
 /*****************************************************************************
  * Callbacks from the native side
@@ -1457,36 +1255,6 @@ Map.prototype._onMarkerEvent = function(eventName, markerId, position) {
       marker.set('isInfoWindowVisible', false);
     }
     marker.trigger(eventName, position, marker);
-  }
-};
-
-Map.prototype._onClusterEvent = function(eventName, markerClusterId, clusterId, position) {
-  var self = this;
-  var markerCluster = self.OVERLAYS[markerClusterId] || null;
-  if (markerCluster) {
-    if (/^marker_/i.test(clusterId)) {
-      // regular marker
-      var marker = markerCluster.getMarkerById(clusterId);
-      if (eventName === event.MARKER_CLICK) {
-        markerCluster.trigger(eventName, position, marker);
-      } else {
-        if (eventName === event.INFO_OPEN) {
-          marker.set('isInfoWindowVisible', true);
-        }
-        if (eventName === event.INFO_CLOSE) {
-          marker.set('isInfoWindowVisible', false);
-        }
-      }
-      marker.trigger(eventName, position, marker);
-    } else {
-      // cluster marker
-      var cluster = markerCluster._getClusterByClusterId(clusterId);
-      if (cluster) {
-        markerCluster.trigger(eventName, cluster);
-      } else {
-        console.log('-----> This is remained cluster icon : ' + clusterId);
-      }
-    }
   }
 };
 
@@ -1536,3 +1304,5 @@ Map.prototype._onCameraEvent = function(eventName, cameraPosition) {
 };
 
 module.exports = Map;
+
+

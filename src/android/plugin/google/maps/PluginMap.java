@@ -64,6 +64,7 @@ import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
+import org.apache.cordova.LOG;
 import org.apache.cordova.PluginEntry;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
@@ -73,6 +74,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -80,6 +82,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 public class PluginMap extends MyPlugin implements OnMarkerClickListener,
@@ -110,6 +117,8 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   private ImageView dummyMyLocationButton;
   public static final Object semaphore = new Object();
   private int viewDepth = 0;
+
+  Lock batchLock = new ReentrantLock();
 
   private enum TEXT_STYLE_ALIGNMENTS {
     left, center, right
@@ -624,11 +633,12 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
       e.printStackTrace();
     }
   }
+
   private void fitBounds(final LatLngBounds cameraBounds, int padding) {
     Builder builder = CameraPosition.builder();
     builder.tilt(map.getCameraPosition().tilt);
     builder.bearing(map.getCameraPosition().bearing);
-    Log.d(TAG, mapView.getWidth() + "x" + mapView.getHeight());
+    //Log.d(TAG, mapView.getWidth() + "x" + mapView.getHeight());
 
     // Fit the camera to the cameraBounds with 20px padding.
     CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngBounds(cameraBounds, padding / (int)density);
@@ -3155,4 +3165,339 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   }
 
 
+  public synchronized MyPlugin getPluginInstance(String serviceName)  {
+    final String pluginName = mapId + "-" + serviceName.toLowerCase();
+    //Log.d("PluginMap", "serviceName = " + serviceName + ", pluginName = " + pluginName);
+
+    try {
+
+      if (plugins.containsKey(pluginName)) {
+        //Log.d("PluginMap", "--> useCache");
+        MyPlugin myPlugin = (MyPlugin) plugins.get(pluginName).plugin;
+        return myPlugin;
+      }
+
+      //Log.d("PluginMap", "--> create new instance");
+      String className = "plugin.google.maps.Plugin" + serviceName;
+      Class pluginCls = Class.forName(className);
+
+      CordovaPlugin plugin = (CordovaPlugin) pluginCls.newInstance();
+      PluginEntry pluginEntry = new PluginEntry(pluginName, plugin);
+      plugins.put(pluginName, pluginEntry);
+      mapCtrl.pluginManager.addService(pluginEntry);
+
+      plugin.privateInitialize(pluginName, cordova, webView, null);
+
+      plugin.initialize(cordova, webView);
+      ((MyPluginInterface)plugin).setPluginMap(PluginMap.this);
+      MyPlugin myPlugin = (MyPlugin) plugin;
+      myPlugin.self = (MyPlugin)plugin;
+
+      return myPlugin;
+
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+
+    return null;
+  }
+
+
+
+  public void batch(final JSONArray args, final CallbackContext callbackContext) {
+    try {
+      final JSONObject data = args.getJSONObject(0);
+
+      batchData(data, new PluginAsyncInterface() {
+
+        @Override
+        public void onPostExecute(Object object) {
+          callbackContext.success((JSONObject) object);
+        }
+
+        @Override
+        public void onError(String errorMsg) {
+          callbackContext.error(errorMsg);
+        }
+      });
+
+    } catch (JSONException e) {
+      e.printStackTrace();
+      callbackContext.error(e.toString());
+    }
+  }
+
+  public void batchData(final JSONObject data, final PluginAsyncInterface callbackContext)  {
+    batchLock.lock();
+
+    final JSONObject result = new JSONObject();
+
+    JSONArray markers   = null;
+    try {
+      markers = data.getJSONArray("markers");
+      //result.put("markers", new JSONArray());
+    } catch (JSONException e) {
+      e.printStackTrace();
+    }
+
+    JSONArray polylines = null;
+    try {
+      polylines = data.getJSONArray("polylines");
+      //result.put("polylines", new JSONArray());
+    } catch (JSONException e) {
+      e.printStackTrace();
+    }
+
+    int nbCallbacks = (polylines == null ? 0 : 1) + (markers == null ? 0 : 1);
+    final CountDownLatch waiter = new CountDownLatch(nbCallbacks);
+
+    //Creating/Updating/Deleting markers
+    if(markers != null) {
+      final MapElementInterface markerPlugin = (PluginMarker) getPluginInstance("Marker");
+
+      CreateOrUpdateParams[] paramsMarkers = new CreateOrUpdateParams[ markers.length()];
+      for (int i = 0; i < markers.length(); i++) {
+        try {
+          final JSONObject marker = markers.getJSONObject(i);
+          paramsMarkers[i] = new CreateOrUpdateParams(marker, markerPlugin);
+        } catch (JSONException e) {
+          e.printStackTrace();
+        }
+      }
+
+      new CreateOrUpdateTask(new PluginAsyncInterface() {
+        @Override
+        public void onPostExecute(Object object) {
+          try {
+            result.put("markers", (JSONArray) object);
+          } catch (JSONException e) {
+            e.printStackTrace();
+          } finally {
+            waiter.countDown();
+          }
+        }
+
+        @Override
+        public void onError(String errorMsg) {
+          waiter.countDown();
+        }
+      }, new CreateOrUpdateCreateDelay() {
+
+        @Override
+        public HashMap shouldWait(int cum, boolean create, boolean removed, JSONObject data) {
+
+          int micro = 0;
+          if(!removed) {
+            if (data.has("icon")) {
+              cum++;
+            }
+            if (cum >= 20) {
+              cum = 0;
+              micro = 50;
+            }
+          }
+
+          HashMap ret = new HashMap();
+          ret.put("cum", cum);
+          ret.put("micro", micro);
+          return ret;
+        }
+      }).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, paramsMarkers);
+    }
+
+    //Creating/Updating/Deleting polylines
+    if(polylines != null) {
+      final MapElementInterface markerPlugin = (PluginPolyline) getPluginInstance("Polyline");
+
+      CreateOrUpdateParams[] paramsPolylines = new CreateOrUpdateParams[ polylines.length()];
+      for (int i = 0; i < polylines.length(); i++) {
+        try {
+          final JSONObject polyline = polylines.getJSONObject(i);
+          paramsPolylines[i] = new CreateOrUpdateParams(polyline, markerPlugin);
+        } catch (JSONException e) {
+          e.printStackTrace();
+        }
+      }
+
+      new CreateOrUpdateTask(new PluginAsyncInterface() {
+        @Override
+        public void onPostExecute(Object object) {
+          try {
+            result.put("polylines", (JSONArray) object);
+          } catch (JSONException e) {
+            e.printStackTrace();
+          } finally {
+            waiter.countDown();
+          }
+        }
+
+        @Override
+        public void onError(String errorMsg) {
+          waiter.countDown();
+        }
+      }, new CreateOrUpdateCreateDelay() {
+
+        @Override
+        public HashMap shouldWait(int cum, boolean create, boolean removed, JSONObject data) {
+
+          int micro = 0;
+          if(!removed) {
+            if (data.has("path") || data.has("points")) {
+              cum++;
+            }
+            if (cum >= 4) {
+              cum = 0;
+              micro = 36;
+            }
+          }
+
+          HashMap ret = new HashMap();
+          ret.put("cum", cum);
+          ret.put("micro", micro);
+          return ret;
+        }
+      }).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, paramsPolylines);
+    }
+
+    try {
+      waiter.await();
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    } finally {
+      callbackContext.onPostExecute(result);
+      batchLock.unlock();
+    }
+
+  }
+}
+
+
+interface CreateOrUpdateCreateDelay {
+  public HashMap shouldWait(int cum, boolean create, boolean removed, JSONObject data);
+}
+
+class CreateOrUpdateParams {
+    JSONObject data;
+    Object plugin;
+
+    public CreateOrUpdateParams(
+            JSONObject data,
+            Object plugin
+    ) {
+        this.data = data;
+        this.plugin = plugin;
+    }
+}
+
+
+
+class CreateOrUpdateTask extends AsyncTask<CreateOrUpdateParams, Void, JSONArray> {
+  PluginAsyncInterface callback;
+  CreateOrUpdateCreateDelay delay;
+
+  public CreateOrUpdateTask(
+          PluginAsyncInterface callback,
+          CreateOrUpdateCreateDelay delay
+  ) {
+    this.delay = delay;
+    this.callback = callback;
+  }
+
+  public CreateOrUpdateTask(
+          PluginAsyncInterface callback
+  ) {
+    this.callback = callback;
+  }
+
+  protected JSONArray doInBackground(CreateOrUpdateParams... parameters) {
+
+    final AbortableCountDownLatch waiter = new AbortableCountDownLatch(parameters.length);
+    final JSONArray result = new JSONArray();
+
+    int cum = 0;
+
+    for(int i = 0; i < parameters.length; i++) {
+        try {
+            CreateOrUpdateParams param = parameters[i];
+            JSONObject data = param.data;
+            MapElementInterface plugin = (MapElementInterface) param.plugin;
+
+            String id = data.has("__pgmId") ? data.getString("__pgmId") : null;
+            String hashCode = data.has("hashCode") ? data.getString("hashCode") : null;
+            boolean create = id == null && hashCode != null;
+            boolean remove = !create && data.has("_removed");
+
+            HashMap waitHowMuch = delay.shouldWait(cum, create, remove, data);
+            cum = (int) waitHowMuch.get("cum");
+            int waitTime = (int) waitHowMuch.get("micro");
+            if(waitTime > 0) {
+              try {
+                TimeUnit.MICROSECONDS.sleep(waitTime);
+              } catch (InterruptedException e) {
+                e.printStackTrace();
+              }
+            }
+
+            if (create) {
+                plugin.createItem(hashCode, data, new PluginAsyncInterface() {
+                    @Override
+                    public void onPostExecute(Object object) {
+                        result.put((JSONObject) object);
+                        waiter.countDown();
+                    }
+
+                    @Override
+                    public void onError(String errorMsg) {
+                        waiter.countDown();
+                    }
+                });
+            } else if(id != null) {
+                if(remove) {
+                  plugin.remove(id, new PluginAsyncInterface() {
+                    @Override
+                    public void onPostExecute(Object object) {
+                      result.put(data);
+                      waiter.countDown();
+                    }
+
+                    @Override
+                    public void onError(String errorMsg) {
+                      waiter.countDown();
+                    }
+                  });
+                } else {
+                  plugin.updateItem(id, data, new PluginAsyncInterface() {
+                      @Override
+                      public void onPostExecute(Object object) {
+                          result.put((JSONObject) object);
+                          waiter.countDown();
+                      }
+
+                      @Override
+                      public void onError(String errorMsg) {
+                          waiter.countDown();
+                      }
+                  });
+                }
+            }
+        } catch(Exception e) {
+            e.printStackTrace();
+            waiter.countDown();
+        }
+    }
+
+    try {
+      waiter.await();
+    } catch (InterruptedException e1) {
+      e1.printStackTrace();
+    }
+
+    return result;
+  }
+
+  protected void onPostExecute(JSONArray result) {
+    if(callback != null) {
+      callback.onPostExecute(result);
+    }
+  }
 }

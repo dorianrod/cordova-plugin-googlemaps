@@ -6,6 +6,7 @@ import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaWebView;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 public interface MyPluginInterface {
   public void initialize(CordovaInterface cordova, CordovaWebView webView);

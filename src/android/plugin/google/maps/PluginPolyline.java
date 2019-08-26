@@ -1,6 +1,7 @@
 package plugin.google.maps;
 
 import android.graphics.Color;
+import android.os.AsyncTask;
 import android.util.Log;
 
 import com.google.android.gms.maps.model.CircleOptions;
@@ -16,10 +17,18 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
-public class PluginPolyline extends MyPlugin implements MyPluginInterface  {
-  private String polylineHashCode;
+class PolylineResult {
+  List<LatLng> points;
+  LatLngBounds bounds;
+}
+
+public class PluginPolyline extends MyPlugin implements MapElementInterface, MyPluginInterface   {
+
 
   /**
    * Create polyline
@@ -28,307 +37,261 @@ public class PluginPolyline extends MyPlugin implements MyPluginInterface  {
    * @throws JSONException
    */
   public void create(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    self = this;
-
-    final PolylineOptions polylineOptions = new PolylineOptions();
-    int color;
-    final LatLngBounds.Builder builder = new LatLngBounds.Builder();
-    final JSONObject properties = new JSONObject();
-
-    JSONObject opts = args.getJSONObject(1);
-    final String hashCode = args.getString(2);
-    polylineHashCode = hashCode;
-
-    if (opts.has("points")) {
-      JSONArray points = opts.getJSONArray("points");
-      List<LatLng> path = PluginUtil.JSONArray2LatLngList(points);
-      int i = 0;
-      for (i = 0; i < path.size(); i++) {
-        polylineOptions.add(path.get(i));
-        builder.include(path.get(i));
-      }
-    }
-    if (opts.has("color")) {
-      color = PluginUtil.parsePluginColor(opts.getJSONArray("color"));
-      polylineOptions.color(color);
-    }
-    if (opts.has("width")) {
-      polylineOptions.width((float)(opts.getDouble("width") * density));
-    }
-    if (opts.has("visible")) {
-      polylineOptions.visible(opts.getBoolean("visible"));
-    }
-    if (opts.has("geodesic")) {
-      polylineOptions.geodesic(opts.getBoolean("geodesic"));
-    }
-    if (opts.has("zIndex")) {
-      polylineOptions.zIndex(opts.getInt("zIndex"));
-    }
-    if (opts.has("clickable")) {
-      properties.put("isClickable", opts.getBoolean("clickable"));
-    } else {
-      properties.put("isClickable", true);
-    }
-    properties.put("isVisible", polylineOptions.isVisible());
-
-    // Since this plugin provide own click detection,
-    // disable default clickable feature.
-    polylineOptions.clickable(false);
-
-    cordova.getActivity().runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-
-        Polyline polyline = map.addPolyline(polylineOptions);
-        polyline.setTag(hashCode);
-        String id = "polyline_" + hashCode;
-        pluginMap.objects.put(id, polyline);
-
-        String boundsId = "polyline_bounds_" + hashCode;
-        pluginMap.objects.put(boundsId, builder.build());
-
-        String propertyId = "polyline_property_" + hashCode;
-        pluginMap.objects.put(propertyId, properties);
-
-        try {
-          JSONObject result = new JSONObject();
-          result.put("hashCode", hashCode);
-          result.put("__pgmId", id);
-          callbackContext.success(result);
-        } catch (JSONException e) {
-          e.printStackTrace();
-          callbackContext.error("" + e.getMessage());
-        }
-      }
-
-    });
+    //
   }
 
 
-  /**
-   * set color
-   * @param args
-   * @param callbackContext
-   * @throws JSONException
-   */
-  public void setStrokeColor(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    String id = args.getString(0);
-    int color = PluginUtil.parsePluginColor(args.getJSONArray(1));
-    this.setInt("setColor", id, color, callbackContext);
-  }
 
-  /**
-   * set width
-   * @param args
-   * @param callbackContext
-   * @throws JSONException
-   */
-  public void setStrokeWidth(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    String id = args.getString(0);
-    float width = (float)(args.getDouble(1) * density);
-    this.setFloat("setWidth", id, width, callbackContext);
-  }
-
-  /**
-   * set z-index
-   * @param args
-   * @param callbackContext
-   * @throws JSONException
-   */
-  public void setZIndex(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    String id = args.getString(0);
-    float zIndex = (float) args.getDouble(1);
-    this.setFloat("setZIndex", id, zIndex, callbackContext);
-  }
-
-
-  /**
-   * Remove the polyline
-   * @param args
-   * @param callbackContext
-   * @throws JSONException
-   */
-  public void remove(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    String id = args.getString(0);
+  public void remove(final String id, final PluginAsyncInterface callbackContext)  {
     final Polyline polyline = this.getPolyline(id);
     if (polyline == null) {
-      callbackContext.success();
+      callbackContext.onPostExecute(null);
       return;
     }
     pluginMap.objects.remove(id);
-
-    id = "polyline_bounds_" + polylineHashCode;
-    pluginMap.objects.remove(id);
+    pluginMap.objects.remove(id.replace("polyline_", "polyline_property_"));
+    pluginMap.objects.remove(id.replace("polyline_", "polyline_bounds_"));
 
     cordova.getActivity().runOnUiThread(new Runnable() {
       @Override
       public void run() {
         polyline.remove();
-        callbackContext.success();
+        callbackContext.onPostExecute(null);
       }
     });
   }
-  public void setPoints(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
 
-    String id = args.getString(0);
-    final JSONArray positionList = args.getJSONArray(1);
 
+  void getPolyline(final JSONObject opts, final PluginAsyncInterface callbackContext) {
+    try {
+      final PolylineResult result = new PolylineResult();
+      final List<LatLng> list = new ArrayList<>();
+
+      List<LatLng> listPoints = null;
+
+      if (opts.has("points")) {
+        JSONArray points = opts.getJSONArray("points");
+        listPoints = PluginUtil.JSONArray2LatLngList(points);
+      }
+      if (opts.has("path")) {
+        String path = opts.getString("path");
+        listPoints = PolyUtil.decode(path);
+      }
+
+      if(listPoints != null) {
+        List<LatLng> simplified = PolyUtil.simplify(listPoints, 100); //100m
+        int i = 0;
+        LatLngBounds.Builder builder = new LatLngBounds.Builder();
+
+        for (i = 0; i < simplified.size(); i++) {
+          list.add(simplified.get(i));
+          builder.include(simplified.get(i));
+        }
+        LatLngBounds bounds = builder.build();
+        result.bounds = bounds;
+        result.points = list;
+      }
+
+      callbackContext.onPostExecute(result);
+    }
+    catch (Exception e) {
+      e.printStackTrace();
+      callbackContext.onError(e.toString());
+    }
+  }
+
+  protected void cachePolylineBounds(String hashCode, LatLngBounds bounds) {
+    String boundsId = "polyline_bounds_" + hashCode;
+    pluginMap.objects.put(boundsId, bounds);
+
+  }
+
+  public void updateItem(final String id, JSONObject opts, final PluginAsyncInterface callbackContext) {
     final Polyline polyline = this.getPolyline(id);
-    // Recalculate the polygon bounds
-    final String propertyId = "polyline_bounds_" + polylineHashCode;
+    if(polyline != null) {
+        synchronized(polyline) {
+            boolean hasPoints = opts.has("points") || opts.has("path");
+            final List<PolylineResult> polyResult = new ArrayList<>();
 
-    cordova.getActivity().runOnUiThread(new Runnable() {
+            if (hasPoints) {
+
+                final CountDownLatch waiter = new CountDownLatch(1);
+                getPolyline(opts, new PluginAsyncInterface() {
+
+                    @Override
+                    public void onPostExecute(Object object) {
+                        PolylineResult polylineResult = (PolylineResult) object;
+                        polyResult.add(polylineResult);
+                        waiter.countDown();
+                    }
+
+                    @Override
+                    public void onError(String errorMsg) {
+                        waiter.countDown();
+                    }
+                });
+
+                try {
+                    waiter.await();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            cordova.getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+
+                    try {
+                        Iterator<String> it = opts.keys();
+                        String hashCode = id.replace("polyline_", "");
+
+                        while (it.hasNext()) {
+                            String key = it.next();
+
+                            switch (key) {
+                                case "strokeColor":
+                                    int color = PluginUtil.parsePluginColor(opts.getJSONArray(key));
+                                    polyline.setColor(color);
+                                    break;
+                                case "strokeWidth":
+                                    float width = (float) (opts.getDouble(key) * density);
+                                    polyline.setWidth(width);
+                                    break;
+                                case "zIndex":
+                                    float zIndex = (float) opts.getDouble(key);
+                                    polyline.setZIndex(zIndex);
+                                    break;
+                                case "geodesic":
+                                    boolean geodesic = opts.getBoolean(key);
+                                    polyline.setGeodesic(geodesic);
+                                    break;
+                                case "visible":
+                                    boolean visible = opts.getBoolean(key);
+                                    polyline.setVisible(visible);
+                                    break;
+                                case "clickable":
+                                    boolean clickable = opts.getBoolean(key);
+                                    polyline.setClickable(clickable);
+
+                                    String propertyId = "polyline_property_" + hashCode;
+                                    JSONObject properties = pluginMap.objects.containsKey(propertyId) ? (JSONObject) pluginMap.objects.get(propertyId) : null;
+                                    properties.put("isClickable", clickable);
+                                    pluginMap.objects.put(propertyId, properties);
+
+                                    break;
+                            }
+                        }
+
+                        if (polyResult.size() > 0) {
+                            PolylineResult result = polyResult.get(0);
+                            polyline.setPoints(result.points);
+                            cachePolylineBounds(hashCode, result.bounds);
+                        }
+
+                        callbackContext.onPostExecute(prepareResponse(polyline));
+                    } catch (Exception e) {
+
+                        e.printStackTrace();
+                        callbackContext.onError(e.toString());
+                    }
+                }
+            });
+        }
+    } else {
+      callbackContext.onError("No polyline anymore");
+    }
+  }
+
+  public void createItem(final String hashCode, JSONObject opts, final PluginAsyncInterface callbackContext) {
+
+    self = this;
+
+
+    getPolyline(opts, new PluginAsyncInterface(){
+
       @Override
-      public void run() {
+      public void onPostExecute(Object object) {
 
         try {
-          List<LatLng> path = polyline.getPoints();
-          path.clear();
-          JSONObject position;
-          for (int i = 0; i < positionList.length(); i++) {
-            position = positionList.getJSONObject(i);
-            path.add(new LatLng(position.getDouble("lat"), position.getDouble("lng")));
+
+          final PolylineOptions polylineOptions = new PolylineOptions();
+          final JSONObject properties = new JSONObject();
+          final PolylineResult polylineResult = (PolylineResult) object;
+          int color;
+
+          if (opts.has("strokeColor")) {
+            color = PluginUtil.parsePluginColor(opts.getJSONArray("strokeColor"));
+            polylineOptions.color(color);
           }
-          polyline.setPoints(path);
-          pluginMap.objects.put(propertyId, PluginUtil.getBoundsFromPath(path));
-        } catch (JSONException e) {
-          e.printStackTrace();
-        }
-        callbackContext.success();
-      }
-    });
-  }
-  public void removePointAt(final JSONArray args, CallbackContext callbackContext) throws JSONException {
-
-    String id = args.getString(0);
-    final int index = args.getInt(1);
-    final Polyline polyline = this.getPolyline(id);
-
-    // Recalculate the polygon bounds
-    final String propertyId = "polyline_bounds_" + polylineHashCode;
-
-    cordova.getActivity().runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        List<LatLng> path = polyline.getPoints();
-        if (path.size() > index) {
-          path.remove(index);
-          if (path.size() > 0) {
-            pluginMap.objects.put(propertyId, PluginUtil.getBoundsFromPath(path));
+          if (opts.has("strokeWidth")) {
+            polylineOptions.width((float) (opts.getDouble("strokeWidth") * density));
+          }
+          if (opts.has("visible")) {
+            polylineOptions.visible(opts.getBoolean("visible"));
+          }
+          if (opts.has("geodesic")) {
+            polylineOptions.geodesic(opts.getBoolean("geodesic"));
+          }
+          if (opts.has("zIndex")) {
+            polylineOptions.zIndex(opts.getInt("zIndex"));
+          }
+          if (opts.has("clickable")) {
+            properties.put("isClickable", opts.getBoolean("clickable"));
           } else {
-            pluginMap.objects.remove(propertyId);
+            properties.put("isClickable", true);
           }
+          properties.put("isVisible", polylineOptions.isVisible());
 
-          polyline.setPoints(path);
+          // Since this plugin provide own click detection,
+          // disable default clickable feature.
+          polylineOptions.clickable(false);
+
+          polylineOptions.addAll(polylineResult.points);
+
+          cordova.getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+              Polyline polyline = map.addPolyline(polylineOptions);
+              polyline.setTag(hashCode);
+
+              String id = "polyline_" + hashCode;
+              pluginMap.objects.put(id, polyline);
+
+              cachePolylineBounds(hashCode, polylineResult.bounds);
+
+              String propertyId = "polyline_property_" + hashCode;
+              pluginMap.objects.put(propertyId, properties);
+
+              callbackContext.onPostExecute(prepareResponse(polyline));
+            }
+          });
+
+        } catch(Exception e) {
+          e.printStackTrace();
+          callbackContext.onError(e.toString());
         }
       }
-    });
-    callbackContext.success();
-  }
-  public void insertPointAt(final JSONArray args, CallbackContext callbackContext) throws JSONException {
 
-    String id = args.getString(0);
-    final int index = args.getInt(1);
-    JSONObject position = args.getJSONObject(2);
-    final LatLng latLng = new LatLng(position.getDouble("lat"), position.getDouble("lng"));
-
-    final Polyline polyline = this.getPolyline(id);
-
-
-    // Recalculate the polygon bounds
-    final String propertyId = "polyline_bounds_" + polylineHashCode;
-
-    cordova.getActivity().runOnUiThread(new Runnable() {
       @Override
-      public void run() {
-        List<LatLng> path = polyline.getPoints();
-        if (path.size() >= index) {
-          path.add(index, latLng);
-          polyline.setPoints(path);
-          pluginMap.objects.put(propertyId, PluginUtil.getBoundsFromPath(path));
-        }
+      public void onError(String errorMsg) {
+        callbackContext.onError(errorMsg);
       }
     });
-    callbackContext.success();
-  }
-  public void setPointAt(final JSONArray args, CallbackContext callbackContext) throws JSONException {
-
-    String id = args.getString(0);
-    final int index = args.getInt(1);
-    JSONObject position = args.getJSONObject(2);
-    final LatLng latLng = new LatLng(position.getDouble("lat"), position.getDouble("lng"));
-
-
-    final Polyline polyline = this.getPolyline(id);
-
-    cordova.getActivity().runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        List<LatLng> path = polyline.getPoints();
-        if (path.size() > index) {
-          path.set(index, latLng);
-
-          // Recalculate the polygon bounds
-          String propertyId = "polyline_bounds_" + polylineHashCode;
-          pluginMap.objects.put(propertyId, PluginUtil.getBoundsFromPath(path));
-
-          polyline.setPoints(path);
-        }
-      }
-    });
-    callbackContext.success();
   }
 
-  /**
-   * set geodesic
-   * @param args
-   * @param callbackContext
-   * @throws JSONException
-   */
-  public void setGeodesic(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    String id = args.getString(0);
-    boolean isGeodisic = args.getBoolean(1);
-    this.setBoolean("setGeodesic", id, isGeodisic, callbackContext);
-  }
 
-  /**
-   * Set visibility for the object
-   * @param args
-   * @param callbackContext
-   * @throws JSONException
-   */
-  public void setVisible(JSONArray args, CallbackContext callbackContext) throws JSONException {
-    String id = args.getString(0);
-    final boolean isVisible = args.getBoolean(1);
+  private JSONObject prepareResponse(Polyline polyline) {
+    final JSONObject result = new JSONObject();
+    final String polylineId = "polyline_" + (String) polyline.getTag(); //"polyline_" + polyline.hashCode();
 
-    final Polyline polyline = this.getPolyline(id);
-
-    cordova.getActivity().runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        polyline.setVisible(isVisible);
-      }
-    });
-    String propertyId = "polyline_property_" + polylineHashCode;
-    JSONObject properties = (JSONObject)pluginMap.objects.get(propertyId);
-    properties.put("isVisible", isVisible);
-    pluginMap.objects.put(propertyId, properties);
-    callbackContext.success();
-  }
-
-  /**
-   * Set clickable for the object
-   * @param args
-   * @param callbackContext
-   * @throws JSONException
-   */
-  public void setClickable(JSONArray args, CallbackContext callbackContext) throws JSONException {
-    String id = args.getString(0);
-    final boolean clickable = args.getBoolean(1);
-    String propertyId = id.replace("polyline_", "polyline_property_");
-    JSONObject properties = (JSONObject)pluginMap.objects.get(propertyId);
-    properties.put("isClickable", clickable);
-    pluginMap.objects.put(propertyId, properties);
-    callbackContext.success();
+    try {
+      result.put("__pgmId", polylineId);
+    } catch (JSONException e) {
+      e.printStackTrace();
+    }
+    return result;
   }
 }
+
+

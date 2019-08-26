@@ -16,6 +16,7 @@ import android.os.Build;
 import android.os.Build.VERSION;
 import android.os.Bundle;
 import android.util.Base64;
+import android.util.Log;
 
 import com.google.android.gms.maps.model.IndoorBuilding;
 import com.google.android.gms.maps.model.IndoorLevel;
@@ -26,6 +27,7 @@ import com.google.android.gms.maps.model.LatLngBounds.Builder;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaResourceApi;
 import org.apache.cordova.CordovaWebView;
+import org.apache.cordova.LOG;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -43,11 +45,43 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+
+
 public class PluginUtil {
   // Get resource id
   // http://stackoverflow.com/a/37840674
   public static int getAppResource(Activity activity, String name, String type) {
     return activity.getResources().getIdentifier(name, type, activity.getPackageName());
+  }
+/*
+  public static void addAll(JSONArray arr1, JSONArray arr2) {
+    synchronized(arr1) {
+      try {
+        for (int i = 0; i < arr2.length(); i++) {
+          arr1.put(arr2.get(i));
+        }
+      } catch (JSONException e) {
+        e.printStackTrace();
+      }
+    }
+  }*/
+
+  public static void addAll(JSONObject arr1, JSONObject arr2) {
+    synchronized(arr1) {
+
+      try {
+          synchronized(arr2) {
+            Iterator<String> it = arr2.keys();
+            while(it.hasNext()) {
+                String key = it.next();
+                arr1.put(key, arr2.getJSONObject(key));
+            }
+          }
+      } catch (JSONException e) {
+        e.printStackTrace();
+      }
+
+    }
   }
 
   public static abstract class MyCallbackContext extends CallbackContext {
