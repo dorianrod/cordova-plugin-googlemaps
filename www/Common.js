@@ -241,7 +241,42 @@
       bottom: rect.bottom
     };
   }
-  
+
+  var ignoreClass = [
+    'scrollable',
+    'ignore-map'
+  ];
+  var notIgnoreClass = [
+    'forced-not-ignore-map'
+  ];
+
+  function testClass(node, cls) {
+    if(!Array.isArray(cls)) {
+      cls = [cls];
+    }
+    var classNames = (node.className || '').split(' ');
+    for(var i = 0; i < cls.length; i++) {
+      if (classNames.indexOf(cls[i]) > -1) {
+          return true;
+      }
+    }
+    return false;
+  }
+
+  function filterChildrenNodeByClass(node, cls, forceCls) {
+    let notFollow = testClass(node, cls);
+    if(notFollow) {
+      if(forceCls) {
+        if(!testClass(node, forceCls)) {
+          return true;
+        }
+      }
+      return true
+    }
+
+    return node.parentNode ? filterChildrenNodeByClass(node.parentNode, cls, forceCls) : false;
+  }
+
   var ignoreTags = [
     'pre', 'textarea', 'p', 'form', 'input', 'caption', 'canvas', 'svg'
   ];
@@ -264,6 +299,10 @@
       return true;
     }
   
+    if(filterChildrenNodeByClass(node, ignoreClass, notIgnoreClass)) {
+      return false;
+    }
+
     var visibilityCSS = getStyle(node, 'visibility');
     var displayCSS = getStyle(node, 'display');
   
@@ -597,26 +636,54 @@
   
     return array;
   }
+
+  function polylineOptionsFilter(polylineOptions) {
+    var id = polylineOptions.__pgmId;
+  
+    if(!id) {
+      polylineOptions.points = polylineOptions.points || [];
+      polylineOptions.visible = defaultTrueOption(polylineOptions.visible);
+      polylineOptions.clickable = polylineOptions.clickable === true;
+      polylineOptions.zIndex = polylineOptions.zIndex || 0;
+      polylineOptions.geodesic = polylineOptions.geodesic === true;
+    }
+  
+    if(polylineOptions.points !== undefined || !id) polylineOptions.points = convertToPositionArray(polylineOptions.points);
+    if(polylineOptions.strokeColor !== undefined || !id) polylineOptions.strokeColor = HTMLColor2RGBA(polylineOptions.strokeColor || '#FF000080', 0.75);
+    if(polylineOptions.strokeWidth !== undefined || !id) polylineOptions.strokeWidth = 'strokeWidth' in polylineOptions ? polylineOptions.strokeWidth : 10;
+  
+    return polylineOptions;
+  }
   
   function markerOptionsFilter(markerOptions) {
     markerOptions = markerOptions || {};
+
+    var id = markerOptions.__pgmId;
   
-    markerOptions.animation = markerOptions.animation || undefined;
-    markerOptions.position = markerOptions.position || {};
-    markerOptions.position.lat = markerOptions.position.lat || 0.0;
-    markerOptions.position.lng = markerOptions.position.lng || 0.0;
-    markerOptions.draggable = markerOptions.draggable === true;
-    markerOptions.icon = markerOptions.icon || undefined;
-    markerOptions.zIndex = markerOptions.zIndex || 0;
-    markerOptions.snippet = typeof (markerOptions.snippet) === 'string' ? markerOptions.snippet : undefined;
-    markerOptions.title = typeof (markerOptions.title) === 'string' ? markerOptions.title : undefined;
-    markerOptions.visible = defaultTrueOption(markerOptions.visible);
-    markerOptions.flat = markerOptions.flat === true;
-    markerOptions.rotation = markerOptions.rotation || 0;
-    markerOptions.opacity = markerOptions.opacity === 0 ? 0 : (parseFloat('' + markerOptions.opacity, 10) || 1);
-    markerOptions.disableAutoPan = markerOptions.disableAutoPan === true;
-    markerOptions.noCache = markerOptions.noCache === true; //experimental
-    if (typeof markerOptions.icon === 'object') {
+    if(!id) {
+      markerOptions.position = markerOptions.position || {};
+      markerOptions.position.lat = markerOptions.position.lat || 0.0;
+      markerOptions.position.lng = markerOptions.position.lng || 0.0;
+      markerOptions.draggable = markerOptions.draggable === true;
+      /*
+      markerOptions.icon = markerOptions.icon || {
+        size: {
+          width: 2,
+          height: 2
+        },
+        url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAABKwAAASsAH7iVGQAAAAEXRFWHRUaXRsZQBQREYgQ3JlYXRvckFevCgAAAATdEVYdEF1dGhvcgBQREYgVG9vbHMgQUcbz3cwAAAALXpUWHREZXNjcmlwdGlvbgAACJnLKCkpsNLXLy8v1ytISdMtyc/PKdZLzs8FAG6fCPGXryy4AAAAFklEQVQImWP8//8/AwMDEwMDAwMDAwAkBgMBmjCi+wAAAABJRU5ErkJggg=='
+      };*/
+      markerOptions.zIndex = markerOptions.zIndex || 0;
+      markerOptions.visible = defaultTrueOption(markerOptions.visible);
+      markerOptions.rotation = markerOptions.rotation || 0;
+      markerOptions.disableAutoPan = markerOptions.disableAutoPan === true;
+    }
+
+    if(markerOptions.opacity !== undefined || !id) {
+      markerOptions.opacity = markerOptions.opacity === 0 ? 0 : (parseFloat('' + markerOptions.opacity, 10) || 1);
+    }
+    
+    if (markerOptions.icon && typeof markerOptions.icon === 'object') {
       if ('anchor' in markerOptions.icon &&
         !Array.isArray(markerOptions.icon.anchor) &&
         'x' in markerOptions.icon.anchor &&
@@ -624,32 +691,11 @@
         markerOptions.icon.anchor = [markerOptions.icon.anchor.x, markerOptions.icon.anchor.y];
       }
     }
-  
-    if ('infoWindowAnchor' in markerOptions &&
-      !Array.isArray(markerOptions.infoWindowAnchor) &&
-      'x' in markerOptions.infoWindowAnchor &&
-      'y' in markerOptions.infoWindowAnchor) {
-      markerOptions.infoWindowAnchor = [markerOptions.infoWindowAnchor.x, markerOptions.infoWindowAnchor.anchor.y];
+
+    if(!markerOptions.icon) {
+      delete markerOptions.icon;
     }
-  
-    if ('style' in markerOptions && !('styles' in markerOptions)) {
-      markerOptions.styles = markerOptions.style;
-      delete markerOptions.style;
-    }
-    if ('styles' in markerOptions) {
-      markerOptions.styles = typeof markerOptions.styles === 'object' ? markerOptions.styles : {};
-  
-      if ('color' in markerOptions.styles) {
-        markerOptions.styles.color = HTMLColor2RGBA(markerOptions.styles.color || '#000000');
-      }
-    }
-    if (markerOptions.icon && isHTMLColorString(markerOptions.icon)) {
-      markerOptions.icon = HTMLColor2RGBA(markerOptions.icon);
-    }
-    if (markerOptions.icon && markerOptions.icon.label &&
-      isHTMLColorString(markerOptions.icon.label.color)) {
-      markerOptions.icon.label.color = HTMLColor2RGBA(markerOptions.icon.label.color);
-    }
+
     return markerOptions;
   }
   
@@ -805,6 +851,7 @@
     getLatLng: getLatLng,
     shouldWatchByNative: shouldWatchByNative,
     markerOptionsFilter: markerOptionsFilter,
+    polylineOptionsFilter: polylineOptionsFilter,
     quickfilter: quickfilter,
     nextTick: nextTick,
     getPluginDomId: getPluginDomId,

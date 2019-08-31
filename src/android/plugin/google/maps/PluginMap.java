@@ -1748,11 +1748,11 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
    * @throws JSONException
    */
   public void setCameraZoom(JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    final Long zoom = args.getLong(0);
+    final Double zoom = args.getDouble(0);
     this.activity.runOnUiThread(new Runnable() {
       @Override
       public void run() {
-        myMoveCamera(CameraUpdateFactory.zoomTo(zoom), callbackContext);
+        myMoveCamera(CameraUpdateFactory.zoomTo(zoom.floatValue()), callbackContext);
       }
     });
   }
@@ -3237,7 +3237,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
       markers = data.getJSONArray("markers");
       //result.put("markers", new JSONArray());
     } catch (JSONException e) {
-      e.printStackTrace();
+      //e.printStackTrace();
     }
 
     JSONArray polylines = null;
@@ -3245,7 +3245,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
       polylines = data.getJSONArray("polylines");
       //result.put("polylines", new JSONArray());
     } catch (JSONException e) {
-      e.printStackTrace();
+      //e.printStackTrace();
     }
 
     int nbCallbacks = (polylines == null ? 0 : 1) + (markers == null ? 0 : 1);
@@ -3421,11 +3421,18 @@ class CreateOrUpdateTask extends AsyncTask<CreateOrUpdateParams, Void, JSONArray
             CreateOrUpdateParams param = parameters[i];
             JSONObject data = param.data;
             MapElementInterface plugin = (MapElementInterface) param.plugin;
+            ObjectCache objects = ((MyPlugin) plugin).pluginMap.objects;
 
             String id = data.has("__pgmId") ? data.getString("__pgmId") : null;
-            String hashCode = data.has("hashCode") ? data.getString("hashCode") : null;
-            boolean create = id == null && hashCode != null;
-            boolean remove = !create && data.has("_removed");
+            String hashCode = null; //data.has("hashCode") ? data.getString("hashCode") : null;
+            String[] id_parts = id != null ? id.split("_", 2) : null;
+
+            if(id_parts != null) {
+              hashCode = id_parts[1];
+            }
+
+            boolean remove = data.has("_removed");
+            boolean create = !remove && objects.get(id) == null;
 
             HashMap waitHowMuch = delay.shouldWait(cum, create, remove, data);
             cum = (int) waitHowMuch.get("cum");

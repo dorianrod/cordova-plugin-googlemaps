@@ -77,11 +77,10 @@ var Overlay = function (map, options, className, _exec, extras) {
 
 utils.extend(Overlay, BaseClass);
 
-Overlay.prototype._privateInitialize = function (options) {
+
+Overlay.prototype._set = function (options) {
   var self = this;
-  //-----------------------------------------------
-  // Sets the initialize option to each property
-  //-----------------------------------------------
+
   if (options) {
     var ignores = ['map', '__pgmId', 'hashCode', 'type'];
     for (var key in options) {
@@ -90,6 +89,13 @@ Overlay.prototype._privateInitialize = function (options) {
       }
     }
   }
+};
+
+
+Overlay.prototype._privateInitialize = function (options) {
+  var self = this;
+
+  this._set(options);
 
   //-----------------------------------------------
   // Trigger internal command queue
@@ -118,3 +124,4 @@ Overlay.prototype.getHashCode = function () {
 };
 
 module.exports = Overlay;
+

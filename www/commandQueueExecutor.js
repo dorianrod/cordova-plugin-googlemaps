@@ -159,13 +159,17 @@ function _exec() {
       continue;
     }
 
-    // Some methods have to block other execution requests, such as `map.clear()`
-    if (commandParams.execOptions.sync) {
-      _isWaitMethod = methodName;
+    try {
+      // Some methods have to block other execution requests, such as `map.clear()`
+      if (commandParams.execOptions.sync) {
+        _isWaitMethod = methodName;
+        cordova_exec.apply(this, commandParams.args);
+        break;
+      }
       cordova_exec.apply(this, commandParams.args);
-      break;
+    } catch(e) {
+      console.error(e);
     }
-    cordova_exec.apply(this, commandParams.args);
   }
 
   _isExecuting = false;

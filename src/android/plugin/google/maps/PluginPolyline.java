@@ -4,10 +4,14 @@ import android.graphics.Color;
 import android.os.AsyncTask;
 import android.util.Log;
 
+import com.google.android.gms.maps.model.Cap;
 import com.google.android.gms.maps.model.CircleOptions;
+import com.google.android.gms.maps.model.Dash;
+import com.google.android.gms.maps.model.Gap;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PatternItem;
 import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
 
@@ -17,6 +21,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -150,6 +155,14 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
                             String key = it.next();
 
                             switch (key) {
+                                case "dash":
+                                    PolylineOptions polyOptions = new PolylineOptions();
+                                    getDashPattern(opts, polyOptions);
+                                    polyline.setPattern(polyOptions.getPattern());
+                                    break;
+                                case "icons":
+                                   
+                                    break;
                                 case "strokeColor":
                                     int color = PluginUtil.parsePluginColor(opts.getJSONArray(key));
                                     polyline.setColor(color);
@@ -203,6 +216,19 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
     }
   }
 
+    public void getDashPattern(JSONObject opts, PolylineOptions polyOptions) {
+        try {
+            if(opts.has("dash") && opts.getBoolean("dash")) {
+                final PatternItem DASH = new Dash(20);
+                final PatternItem GAP = new Gap(20);
+                final List<PatternItem> pattern = Arrays.asList(GAP, DASH);
+                polyOptions.pattern(pattern);
+            }
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
+
   public void createItem(final String hashCode, JSONObject opts, final PluginAsyncInterface callbackContext) {
 
     self = this;
@@ -218,6 +244,11 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
           final PolylineOptions polylineOptions = new PolylineOptions();
           final JSONObject properties = new JSONObject();
           final PolylineResult polylineResult = (PolylineResult) object;
+          if(polylineResult == null) {
+              callbackContext.onError("no polyline");
+              return;
+          }
+
           int color;
 
           if (opts.has("strokeColor")) {
@@ -242,6 +273,8 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
             properties.put("isClickable", true);
           }
           properties.put("isVisible", polylineOptions.isVisible());
+
+          getDashPattern(opts, polylineOptions);
 
           // Since this plugin provide own click detection,
           // disable default clickable feature.

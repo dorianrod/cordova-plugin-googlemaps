@@ -120,9 +120,9 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
           for (String objectId : objectIdArray) {
             if (pluginMap.objects.containsKey(objectId)) {
               if (objectId.startsWith("marker_") &&
-                  !objectId.startsWith("marker_property_") &&
-                  !objectId.startsWith("marker_imageSize_") &&
-                  !objectId.startsWith("marker_icon_")) {
+                      !objectId.startsWith("marker_property_") &&
+                      !objectId.startsWith("marker_imageSize_") &&
+                      !objectId.startsWith("marker_icon_")) {
                 Marker marker = (Marker) pluginMap.objects.remove(objectId);
                 _removeMarker(marker);
                 marker = null;
@@ -203,9 +203,9 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
             for (String objectId : objectIdArray) {
               if (pluginMap.objects.containsKey(objectId)) {
                 if (objectId.startsWith("marker_") &&
-                    !objectId.startsWith("marker_property_") &&
-                    !objectId.startsWith("marker_imageSize") &&
-                    !objectId.startsWith("marker_icon_")) {
+                        !objectId.startsWith("marker_property_") &&
+                        !objectId.startsWith("marker_imageSize") &&
+                        !objectId.startsWith("marker_icon_")) {
                   Marker marker = (Marker) pluginMap.objects.remove(objectId);
                   marker.setTag(null);
                   marker.remove();
@@ -303,7 +303,7 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
       return;
     }
 
-   // Log.d("remove", id);
+    // Log.d("remove", id);
 
     setDisappearAnimation(marker, new PluginAsyncInterface(){
 
@@ -325,8 +325,8 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
 
       @Override
       public void onError(String errorMsg) {
-          Log.e("remove after error", errorMsg);
-          _removeMarker(marker);
+        Log.e("remove after error", errorMsg);
+        _removeMarker(marker);
         callbackContext.onError(errorMsg);
       }
     });
@@ -356,7 +356,7 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
         count--;
         iconCacheKeys.put(cacheKey, count);
       }
-     // pluginMap.objects.remove(iconCacheKey);
+      // pluginMap.objects.remove(iconCacheKey);
     }
   }
 
@@ -432,9 +432,9 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
       noCaching = iconProperty.getBoolean("noCache");
     }
     if (iconProperty.containsKey("iconHue")) {
-        float hue = iconProperty.getFloat("iconHue");
-        marker.setIcon(BitmapDescriptorFactory.defaultMarker(hue));
-        return;
+      float hue = iconProperty.getFloat("iconHue");
+      marker.setIcon(BitmapDescriptorFactory.defaultMarker(hue));
+      return;
     }
 
     String iconUrl = iconProperty.getString("url");
@@ -480,11 +480,10 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
           return;
         }
 
-        synchronized (marker) {
-          String markerTag = (marker.getTag() + "").replace("marker_", "");
-          String markerIconTag = "marker_icon_" + markerTag;
-          String markerImgSizeTag = "marker_imageSize_" + markerTag;
-          String currentCacheKey = (String) pluginMap.objects.get(markerIconTag);
+        String markerTag = (marker.getTag() + "").replace("marker_", "");
+        String markerIconTag = "marker_icon_" + markerTag;
+        String markerImgSizeTag = "marker_imageSize_" + markerTag;
+        String currentCacheKey = (String) pluginMap.objects.get(markerIconTag);
 
           if (result.cacheKey != null && !result.cacheKey.equals(currentCacheKey)) {
             synchronized (iconCacheKeys) {
@@ -579,7 +578,6 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
             }
           });
 
-        }
       }
     };
 
@@ -746,99 +744,107 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
   public void updateItem(final String id, JSONObject opts, final PluginAsyncInterface callbackContext) {
     final Marker marker = this.getMarker(id);
     if(marker != null) {
-        synchronized(marker) {
-            Iterator<String> it = opts.keys();
-            String hashCode = id.replace("marker_", "");
+      synchronized(marker) {
+        Iterator<String> it = opts.keys();
+        String hashCode = id.replace("marker_", "");
 
-            JSONObject result = new JSONObject();
+        JSONObject result = new JSONObject();
 
-            boolean hasIcon = opts.has("icon");
+        boolean hasIcon = opts.has("icon");
 
-            final CountDownLatch waiterIcon = new CountDownLatch(hasIcon ? 1 : 0);
+        final CountDownLatch waiterIcon = new CountDownLatch(hasIcon ? 1 : 0);
 
-            if (hasIcon) {
-                Bundle bundle = getBundleIcon(opts);
-                this.setIcon(marker, bundle, new PluginAsyncInterface() {
-                    @Override
-                    public void onPostExecute(final Object object) {
-                        //Marker marker = (Marker) object;
-                        waiterIcon.countDown();
-                    }
-
-                    @Override
-                    public void onError(String errorMsg) {
-                      waiterIcon.countDown();
-                    }
-
-                });
+        if (hasIcon) {
+          Bundle bundle = getBundleIcon(opts);
+          this.setIcon(marker, bundle, new PluginAsyncInterface() {
+            @Override
+            public void onPostExecute(final Object object) {
+              //Marker marker = (Marker) object;
+              waiterIcon.countDown();
             }
 
-          try {
-            waiterIcon.await();
-          } catch (InterruptedException e) {
-            e.printStackTrace();
-          }
+            @Override
+            public void onError(String errorMsg) {
+              waiterIcon.countDown();
+            }
 
-          cordova.getActivity().runOnUiThread(new Runnable() {
-              @Override
-              public void run() {
-                try {
+          });
+        }
 
-                  while (it.hasNext()) {
-                    String key = it.next();
+        try {
+          waiterIcon.await();
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
 
-                    switch (key) {
-                      case "position":
-                        JSONObject latlng = opts.getJSONObject(key);
-                        final LatLng position = new LatLng(latlng.getDouble("lat"), latlng.getDouble("lng"));
-                        marker.setPosition(position);
-                        break;
+        cordova.getActivity().runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            try {
 
-                      case "title":
-                        marker.setTitle(opts.getString(key));
-                        break;
+              while (it.hasNext()) {
+                String key = it.next();
 
-                      case "snippet":
-                        marker.setSnippet(opts.getString(key));
-                        break;
+                switch (key) {
+                  case "position":
+                    JSONObject latlng = opts.getJSONObject(key);
+                    final LatLng position = new LatLng(latlng.getDouble("lat"), latlng.getDouble("lng"));
+                    marker.setPosition(position);
+                    break;
 
+                  case "title":
+                    marker.setTitle(opts.getString(key));
+                    break;
+
+                  case "snippet":
+                    marker.setSnippet(opts.getString(key));
+                    break;
+
+                        /*
                       case "visible":
                         marker.setVisible(opts.getBoolean(key));
-                        break;
+                        break;*/
 
-                      case "draggable":
-                        marker.setDraggable(opts.getBoolean(key));
-                        break;
+                  case "draggable":
+                    marker.setDraggable(opts.getBoolean(key));
+                    break;
 
-                      case "rotation":
-                        marker.setRotation((float) opts.getDouble(key));
-                        break;
+                  case "rotation":
+                    marker.setRotation((float) opts.getDouble(key));
+                    break;
 
-                      case "flat":
-                        marker.setFlat(opts.getBoolean(key));
-                        break;
+                  case "flat":
+                    marker.setFlat(opts.getBoolean(key));
+                    break;
 
-                      case "zIndex":
-                        marker.setZIndex((float) opts.getDouble(key));
-                        break;
+                  case "zIndex":
+                    marker.setZIndex((float) opts.getDouble(key));
+                    break;
 
-                    }
-                  }
-
-                  try {
-                    marker.setAlpha(opts.has("opacity") ? (float) opts.getDouble("opacity") : 1);
-                  } catch (JSONException e) {
-                    e.printStackTrace();
-                  }
-
-                  callbackContext.onPostExecute(prepareResponse(marker));
-                } catch (Exception e) {
-                  e.printStackTrace();
-                  callbackContext.onError(e.toString());
                 }
               }
-            });
-        }
+
+              boolean visible = true;
+              try {
+                visible = opts.has("visible") ? opts.getBoolean("visible") : true;
+              } catch (JSONException e) {
+                e.printStackTrace();
+              }
+
+              try {
+                marker.setAlpha(!visible ? 0 : (opts.has("opacity") ? (float) opts.getDouble("opacity") : 1));
+              } catch (JSONException e) {
+                e.printStackTrace();
+              }
+
+              callbackContext.onPostExecute(prepareResponse(marker));
+            } catch (Exception e) {
+              e.printStackTrace();
+              callbackContext.onError(e.toString());
+            }
+          }
+        });
+      }
 
     } else {
       callbackContext.onError("No marker anymore");
@@ -937,16 +943,23 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
   }
 
   private void setScaleAnimation(final Marker marker, int way, final PluginAsyncInterface callback) {
-      final long startTime = SystemClock.uptimeMillis();
-      final long duration = 200;
+    final long startTime = SystemClock.uptimeMillis();
+    final long duration = 200;
 
-      cordova.getActivity().runOnUiThread(new Runnable() {
-          @Override
-          public void run() {
-            final String markerId = ((String) marker.getTag());
-            final String markerTag = markerId.replace("marker_", "");
-            final String markerImgSizeTag = "marker_imageSize_" + markerTag;
-            //final Bitmap bitmap;
+    cordova.getActivity().runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+
+        final String markerId = ((String) marker.getTag()); //markerTag can be null in some conditions
+        if(markerId == null) {
+          callback.onError("no more marker");
+          return;
+        }
+
+        final String markerTag = markerId.replace("marker_", "");
+        final String markerImgSizeTag = "marker_imageSize_" + markerTag;
+
+        //final Bitmap bitmap;
 
             /*
             synchronized(icons) {
@@ -960,22 +973,22 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
               }
             }*/
 
-            class End {
-              public void clean(boolean error, boolean finishAnimation) {
-               // bitmap.recycle();
-                if(finishAnimation) {
-                  animationProgress.remove(markerId);
-                }
-                if(callback != null) {
-                  if(error) {
-                    callback.onError(null);
-                  } else {
-                    callback.onPostExecute(null);
-                  }
-                }
+        class End {
+          public void clean(boolean error, boolean finishAnimation) {
+            // bitmap.recycle();
+            if(finishAnimation) {
+              animationProgress.remove(markerId);
+            }
+            if(callback != null) {
+              if(error) {
+                callback.onError(null);
+              } else {
+                callback.onPostExecute(null);
               }
             }
-            final End end = new End();
+          }
+        }
+        final End end = new End();
 
 
             /*
@@ -984,40 +997,40 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
               end.clean(true, true);
             }*/
 
-           // final int width = imageSize.getInt("width");
-           // final int height = imageSize.getInt("height");
+        // final int width = imageSize.getInt("width");
+        // final int height = imageSize.getInt("height");
 
-            final Handler handler = new Handler();
-            final Interpolator interpolator = new LinearInterpolator();
+        final Handler handler = new Handler();
+        final Interpolator interpolator = new LinearInterpolator();
 
-            handler.post(new Runnable() {
-              @Override
-              public void run() {
-                //  Log.d("Animation start", markerId);
+        handler.post(new Runnable() {
+          @Override
+          public void run() {
+            //  Log.d("Animation start", markerId);
 
-                final Marker marker = getMarker(markerId);
-                if (marker != null) {
-                  synchronized(marker) {
-                    synchronized (animationProgress) {
-                      AnimationState curState = animationProgress.get(markerId);
-                      if (curState != null && curState.way < 0 && way > 0) {
-                        end.clean(true, false);
-                        return;
-                      }
+            final Marker marker = getMarker(markerId);
+            if (marker != null) {
+              synchronized(marker) {
+                synchronized (animationProgress) {
+                  AnimationState curState = animationProgress.get(markerId);
+                  if (curState != null && curState.way < 0 && way > 0) {
+                    end.clean(true, false);
+                    return;
+                  }
 
-                      long elapsed = SystemClock.uptimeMillis() - startTime;
-                      float t = interpolator.getInterpolation((float) elapsed / duration);
-                      if (t > 1) t = 1;
+                  long elapsed = SystemClock.uptimeMillis() - startTime;
+                  float t = interpolator.getInterpolation((float) elapsed / duration);
+                  if (t > 1) t = 1;
 
-                      float progress = way > 0 ? t : 1 - t;
+                  float progress = way > 0 ? t : 1 - t;
 
-                      // int w = Math.max(10, (int) Math.round(progress * width));
-                      // int h = Math.max(10, (int) Math.round(progress * height));
-                      float alpha = Math.min(1, 1 * progress);
+                  // int w = Math.max(10, (int) Math.round(progress * width));
+                  // int h = Math.max(10, (int) Math.round(progress * height));
+                  float alpha = Math.min(1, 1 * progress);
 
-                      animationProgress.put(markerId, new AnimationState(progress, way));
+                  animationProgress.put(markerId, new AnimationState(progress, way));
 
-                      marker.setAlpha(alpha);
+                  marker.setAlpha(alpha);
                       /*
                       synchronized(bitmap) {
                         if (bitmap != null) {
@@ -1038,91 +1051,100 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
                         }
                       }*/
 
-                      if (t < 1.0) {
-                        handler.postDelayed(this, 16);
-                      } else {
-                        end.clean(false, true);
-                      }
-                    }
+                  if (t < 1.0) {
+                    handler.postDelayed(this, 16);
+                  } else {
+                    end.clean(false, true);
                   }
-                } else {
-                    end.clean(true, true);
                 }
               }
-            });
+            } else {
+              end.clean(true, true);
+            }
           }
-      });
-    }
+        });
+      }
+    });
+  }
 
 
-    public void createItem(final String hashCode, final JSONObject opts, final PluginAsyncInterface callbackContext) {
-      try {
-        final String markerId = "marker_" + hashCode;
-        final JSONObject properties = new JSONObject();
-        final MarkerOptions markerOptions = new MarkerOptions();
+  public void createItem(final String hashCode, final JSONObject opts, final PluginAsyncInterface callbackContext) {
+    try {
+      final String markerId = "marker_" + hashCode;
+      final JSONObject properties = new JSONObject();
+      final MarkerOptions markerOptions = new MarkerOptions();
 
-        final boolean animation = opts.has("noAnimation") ? false : true;
+      final boolean animation = opts.has("noAnimation") ? false : true;
 
-        if (opts.has("position")) {
-          JSONObject position = opts.getJSONObject("position");
-          markerOptions.position(new LatLng(position.getDouble("lat"), position.getDouble("lng")));
-        }
-        if (opts.has("title")) {
-          markerOptions.title(opts.getString("title"));
-        }
-        if (opts.has("snippet")) {
-          markerOptions.snippet(opts.getString("snippet"));
-        }
+      if (opts.has("position")) {
+        JSONObject position = opts.getJSONObject("position");
+        markerOptions.position(new LatLng(position.getDouble("lat"), position.getDouble("lng")));
+      }
+      if (opts.has("title")) {
+        markerOptions.title(opts.getString("title"));
+      }
+      if (opts.has("snippet")) {
+        markerOptions.snippet(opts.getString("snippet"));
+      }
+        /*
         if (opts.has("visible")) {
           markerOptions.visible(opts.getBoolean("visible"));
-        }
-        if (opts.has("draggable")) {
-          markerOptions.draggable(opts.getBoolean("draggable"));
-        }
-        markerOptions.visible(false);
-        if (opts.has("rotation")) {
-          markerOptions.rotation((float) opts.getDouble("rotation"));
-        }
-        if (opts.has("flat")) {
-          markerOptions.flat(opts.getBoolean("flat"));
-        }
-        if (opts.has("opacity")) {
-          markerOptions.alpha(0);
-        }
-        if (opts.has("zIndex")) {
-          markerOptions.zIndex((float) opts.getDouble("zIndex"));
-        }
+        }*/
+      if (opts.has("draggable")) {
+        markerOptions.draggable(opts.getBoolean("draggable"));
+      }
+      markerOptions.visible(false);
+      if (opts.has("rotation")) {
+        markerOptions.rotation((float) opts.getDouble("rotation"));
+      }
+      if (opts.has("flat")) {
+        markerOptions.flat(opts.getBoolean("flat"));
+      }
+      //if (opts.has("opacity")) {
 
-        if (opts.has("icon")) {
+      markerOptions.alpha(0);
+
+      // }
+      if (opts.has("zIndex")) {
+        markerOptions.zIndex((float) opts.getDouble("zIndex"));
+      }
+
+      if (opts.has("icon")) {
+        try {
           JSONObject icon = opts.getJSONObject("icon");
-          if(opts.has("anchor")) {
+          if (opts.has("anchor")) {
             JSONObject anchor = icon.getJSONObject("anchor");
             properties.put("anchor", anchor);
           }
+        } catch(Exception e) {
+          //
         }
-        if (opts.has("styles")) {
-          properties.put("styles", opts.getJSONObject("styles"));
-        }
-        if (opts.has("disableAutoPan")) {
-          properties.put("disableAutoPan", opts.getBoolean("disableAutoPan"));
-        } else {
-          properties.put("disableAutoPan", false);
-        }
-        if (opts.has("noCache")) {
-          properties.put("noCache", opts.getBoolean("noCache"));
-        } else {
-          properties.put("noCache", false);
-        }
-        if (opts.has("useHtmlInfoWnd")) {
-          properties.put("useHtmlInfoWnd", opts.getBoolean("useHtmlInfoWnd"));
-        } else {
-          properties.put("useHtmlInfoWnd", false);
-        }
+      }
+      if (opts.has("styles")) {
+        properties.put("styles", opts.getJSONObject("styles"));
+      }
+      if (opts.has("disableAutoPan")) {
+        properties.put("disableAutoPan", opts.getBoolean("disableAutoPan"));
+      } else {
+        properties.put("disableAutoPan", false);
+      }
+      if (opts.has("noCache")) {
+        properties.put("noCache", opts.getBoolean("noCache"));
+      } else {
+        properties.put("noCache", false);
+      }
+      if (opts.has("useHtmlInfoWnd")) {
+        properties.put("useHtmlInfoWnd", opts.getBoolean("useHtmlInfoWnd"));
+      } else {
+        properties.put("useHtmlInfoWnd", false);
+      }
 
-        cordova.getActivity().runOnUiThread(new Runnable() {
-          @Override
-          public void run() {
-            final Marker marker = map.addMarker(markerOptions);
+      cordova.getActivity().runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          final Marker marker = map.addMarker(markerOptions);
+
+          synchronized (marker) {
 
             marker.setTag("marker_" + hashCode);
             marker.hideInfoWindow();
@@ -1148,20 +1170,21 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
               //------------------------------
               Bundle bundle = getBundleIcon(opts);
 
-              PluginMarker.this.setIcon(marker, bundle, new PluginAsyncInterface() {
+              setIcon(marker, bundle, new PluginAsyncInterface() {
                 @Override
                 public void onPostExecute(final Object object) {
                   Marker marker = (Marker) object;
                   marker.setVisible(true);
 
-                  if(!animation) {
-                      try {
-                          marker.setAlpha(opts.has("opacity") ? (float) opts.getDouble("opacity") : 1);
-                      } catch (JSONException e) {
-                          e.printStackTrace();
-                      }
+                  if (!animation) {
+                    try {
+                      boolean visible = opts.getBoolean("visible") ? opts.getBoolean("visible") : true;
+                      marker.setAlpha(!visible ? 0 : (opts.has("opacity") ? (float) opts.getDouble("opacity") : 1));
+                    } catch (JSONException e) {
+                      e.printStackTrace();
+                    }
                   } else {
-                      setAppearAnimation(marker, null);
+                    setAppearAnimation(marker, null);
                   }
 
                   callbackContext.onPostExecute(prepareResponse(marker));
@@ -1177,11 +1200,13 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
               callbackContext.onPostExecute(prepareResponse(marker));
             }
           }
-        });
-      } catch (JSONException e) {
-        e.printStackTrace();
-        callbackContext.onError(e.toString());
-      }
+
+        }
+      });
+    } catch (JSONException e) {
+      e.printStackTrace();
+      callbackContext.onError(e.toString());
+    }
   }
 
   private JSONObject prepareResponse(Marker marker) {
