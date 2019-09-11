@@ -379,60 +379,6 @@
 	return this;
   };
   
-  /**
-   * Clears all markup that has been added to the map,
-   * including markers, polylines and ground overlays.
-   */
-  Map.prototype.clear = function(callback) {
-	var self = this;
-	if (self._isRemoved) {
-	  // Simply ignore because this map is already removed.
-	  return Promise.resolve();
-	}
-  
-	// Close the active infoWindow
-	var active_marker = self.get('active_marker');
-	if (active_marker) {
-	  active_marker.trigger(event.INFO_CLOSE);
-	}
-  
-	var clearObj = function(obj) {
-	  var ids = Object.keys(obj);
-	  var id, instance;
-	  for (var i = 0; i < ids.length; i++) {
-		id = ids[i];
-		instance = obj[id];
-		if (instance) {
-		  if (typeof instance.remove === 'function') {
-			instance.remove();
-		  }
-		  instance.off();
-		  delete obj[id];
-		}
-	  }
-	  obj = {};
-	};
-  
-	clearObj(self.OVERLAYS);
-	clearObj(self.MARKERS);
-	self.trigger('map_clear');
-  
-	var resolver = function(resolve, reject) {
-	  self.exec.call(self,
-		resolve.bind(self),
-		reject.bind(self),
-		self.__pgmId, 'clear', [], {
-		  sync: true
-		});
-	};
-  
-	if (typeof callback === 'function') {
-	  resolver(callback, self.errorHandler);
-	} else {
-	  return new Promise(resolver);
-	}
-  
-  };
   
   /**
    * @desc Change the map type
@@ -556,7 +502,7 @@
 		resolve.bind(self),
 		reject.bind(self),
 		self.__pgmId, 'animateCamera', [cameraPosition], {
-		  sync: true
+		  sync: false
 		});
 	};
   
@@ -607,7 +553,7 @@
 		resolve.bind(self),
 		reject.bind(self),
 		self.__pgmId, 'moveCamera', [cameraPosition], {
-		  sync: true
+		  sync: false
 		});
 	};
   
@@ -761,14 +707,16 @@
   
   
 	var resolver = function(resolve, reject) {
-	  self.exec.call(self,
-		resolve.bind(self),
-		reject.bind(self),
-		'CordovaGoogleMaps', 'removeMap', [self.__pgmId],
-		{
-		  sync: true,
-		  remove: true
-		});
+		setTimeout(()=>{
+			self.exec.call(self,
+				resolve.bind(self),
+				reject.bind(self),
+				'CordovaGoogleMaps', 'removeMap', [self.__pgmId],
+				{
+				sync: true,
+				remove: true
+				});
+		}, 20);
 	};
   
 	if (typeof callback === 'function') {
