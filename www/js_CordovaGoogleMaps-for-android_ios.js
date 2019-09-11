@@ -694,9 +694,9 @@
   
     map.on('__isAttached_changed', function(oldValue, newValue) {
       if (newValue) {
-        cordova_exec(null, null, map.__pgmId, 'attachToWebView', []);
+        cordova_exec(null, null, map.__pgmId, 'enableClickInterception', []);
       } else {
-        cordova_exec(null, null, map.__pgmId, 'detachFromWebView', []);
+        cordova_exec(null, null, map.__pgmId, 'disableClickInterception', []);
       }
     });
   
@@ -1022,4 +1022,3 @@
   
   
   module.exports = CordovaGoogleMaps;
-  

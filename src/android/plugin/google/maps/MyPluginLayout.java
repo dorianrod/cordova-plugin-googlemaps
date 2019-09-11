@@ -6,14 +6,17 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.PointF;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.view.ViewTreeObserver;
 import android.widget.AbsoluteLayout;
 import android.widget.FrameLayout;
@@ -31,6 +34,16 @@ import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
+
+class ClipOutlineProvider extends ViewOutlineProvider {
+  @Override
+  public void getOutline(View view, Outline outline) {
+    final int margin = 2;//Math.min(view.getWidth(), view.getHeight()) / 10;
+    outline.setRoundRect(0, 0, view.getWidth(),
+            view.getHeight(), 4);
+  }
+}
+
 
 @SuppressWarnings("deprecation")
 public class MyPluginLayout extends FrameLayout implements ViewTreeObserver.OnScrollChangedListener, ViewTreeObserver.OnGlobalLayoutListener {
@@ -164,6 +177,7 @@ public class MyPluginLayout extends FrameLayout implements ViewTreeObserver.OnSc
     scrollView = new ScrollView(this.context);
     scrollView.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
+
     root.removeView(browserView);
     frontLayer.addView(browserView);
 
@@ -179,13 +193,25 @@ public class MyPluginLayout extends FrameLayout implements ViewTreeObserver.OnSc
     scrollView.setVerticalScrollBarEnabled(true);
     scrollView.addView(scrollFrameLayout);
 
+    ///Rect clipBounds = new Rect();
+   // clipBounds.set(0, 200, 100, 300);
+   // browserView.setClipBounds(clipBounds);
+
+    ViewOutlineProvider mOutlineProvider = new ClipOutlineProvider();
+    browserView.setOutlineProvider(mOutlineProvider);
+    browserView.setClipToOutline(true); // Setting false disable clipping
+
     browserView.setDrawingCacheEnabled(false);
 
 
     this.addView(scrollView);
     this.addView(frontLayer);
     root.addView(this);
+
+
+    //frontLayer.addView(browserView);
     browserView.setBackgroundColor(Color.TRANSPARENT);
+    //this.bringToFront();
     /*
     if("org.xwalk.core.XWalkView".equals(browserView.getClass().getName())
       || "org.crosswalk.engine.XWalkCordovaView".equals(browserView.getClass().getName())) {
@@ -311,10 +337,26 @@ public class MyPluginLayout extends FrameLayout implements ViewTreeObserver.OnSc
     });
   }
 
+  public IPluginView setClickInterception(final String overlayId, boolean enabled) {
+    if (pluginOverlays == null || !pluginOverlays.containsKey(overlayId)) {
+      return null;
+    }
+
+    final IPluginView pluginOverlay = pluginOverlays.get(overlayId);
+    if(pluginOverlay != null) {
+      synchronized(pluginOverlay) {
+        pluginOverlay.interceptClick(enabled);
+      }
+    }
+    return pluginOverlay;
+  }
+
   public IPluginView removePluginOverlay(final String overlayId) {
     if (pluginOverlays == null || !pluginOverlays.containsKey(overlayId)) {
       return null;
     }
+    setClickInterception(overlayId, false);
+
     final IPluginView pluginOverlay = pluginOverlays.remove(overlayId);
 
     mActivity.runOnUiThread(new Runnable() {
@@ -352,6 +394,8 @@ public class MyPluginLayout extends FrameLayout implements ViewTreeObserver.OnSc
       HTMLNodeRectFs.put(pluginOverlay.getDivId(), new RectF(0, 3000, 200, 200));
     }
     pluginOverlays.put(pluginOverlay.getOverlayId(), pluginOverlay);
+
+    setClickInterception(pluginOverlay.getOverlayId(), true);
 
     mActivity.runOnUiThread(new Runnable() {
       @Override
@@ -620,47 +664,47 @@ public class MyPluginLayout extends FrameLayout implements ViewTreeObserver.OnSc
         return false;
       }
 
+      synchronized(pluginOverlays) {
+        IPluginView pluginOverlay;
+        Iterator<Map.Entry<String, IPluginView>> iterator = pluginOverlays.entrySet().iterator();
+        Entry<String, IPluginView> entry;
 
-      IPluginView pluginOverlay;
-      Iterator<Map.Entry<String, IPluginView>> iterator =  pluginOverlays.entrySet().iterator();
-      Entry<String, IPluginView> entry;
+        PointF clickPoint = new PointF(event.getX(), event.getY());
 
-      PointF clickPoint = new PointF(event.getX(), event.getY());
+        RectF drawRect;
+        synchronized (_lockHtmlNodes) {
+          CACHE_FIND_DOM.clear();
 
-      RectF drawRect;
+          String clickedDomId = findClickedDom("root", clickPoint, false, null);
+          //Log.d(TAG, "----clickedDomId = " + clickedDomId);
+          while (iterator.hasNext()) {
+            entry = iterator.next();
+            pluginOverlay = entry.getValue();
 
-      synchronized (_lockHtmlNodes) {
-        CACHE_FIND_DOM.clear();
+            //-----------------------
+            // Is the map clickable?
+            //-----------------------
+            if (!pluginOverlay.isInterceptClickEnabled() || !pluginOverlay.getVisible() || !pluginOverlay.getClickable()) {
+              continue;
+            }
 
-        String clickedDomId = findClickedDom("root", clickPoint, false, null);
-        //Log.d(TAG, "----clickedDomId = " + clickedDomId);
-        while (iterator.hasNext()) {
-          entry = iterator.next();
-          pluginOverlay = entry.getValue();
+            if (pluginOverlay.getDivId() == null) {
+              continue;
+            }
 
-          //-----------------------
-          // Is the map clickable?
-          //-----------------------
-          if (!pluginOverlay.getVisible() || !pluginOverlay.getClickable()) {
-            continue;
+            //------------------------------------------------
+            // Is the clicked point is in the map rectangle?
+            //------------------------------------------------
+            drawRect = HTMLNodeRectFs.get(pluginOverlay.getDivId());
+            if (drawRect == null || !drawRect.contains(clickPoint.x, clickPoint.y)) {
+              continue;
+            }
+
+            if (pluginOverlay.getDivId().equals(clickedDomId)) {
+              return true;
+            }
+
           }
-
-          if (pluginOverlay.getDivId() == null) {
-            continue;
-          }
-
-          //------------------------------------------------
-          // Is the clicked point is in the map rectangle?
-          //------------------------------------------------
-          drawRect = HTMLNodeRectFs.get(pluginOverlay.getDivId());
-          if (drawRect == null || !drawRect.contains(clickPoint.x, clickPoint.y)) {
-            continue;
-          }
-
-          if (pluginOverlay.getDivId().equals(clickedDomId)) {
-            return true;
-          }
-
         }
       }
       isScrolling = (action == MotionEvent.ACTION_DOWN) || isScrolling;

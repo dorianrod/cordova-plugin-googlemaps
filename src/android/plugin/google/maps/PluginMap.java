@@ -117,6 +117,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   private ImageView dummyMyLocationButton;
   public static final Object semaphore = new Object();
   private int viewDepth = 0;
+  private boolean interceptClickEnable = true;
 
   Lock batchLock = new ReentrantLock();
 
@@ -643,6 +644,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     // Fit the camera to the cameraBounds with 20px padding.
     CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngBounds(cameraBounds, padding / (int)density);
     try {
+        map.stopAnimation();
         map.moveCamera(cameraUpdate);
         builder.zoom(map.getCameraPosition().zoom);
         builder.target(map.getCameraPosition().target);
@@ -687,6 +689,30 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     }
   }
 
+  public void interceptClick(boolean e) {
+    interceptClickEnable = e;
+
+    /*
+    activity.runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        webView.getView().setClipToOutline(e);
+      }
+    });*/
+  }
+
+  public boolean isInterceptClickEnabled() {
+    return interceptClickEnable;
+  }
+
+  public void enableClickInterception(JSONArray args, final CallbackContext callbackContext) {
+    mapCtrl.mPluginLayout.setClickInterception(this.mapId, true);
+    callbackContext.success();
+  }
+  public void disableClickInterception(JSONArray args, final CallbackContext callbackContext)  {
+    mapCtrl.mPluginLayout.setClickInterception(this.mapId, false);
+    callbackContext.success();
+  }
 
   public void attachToWebView(JSONArray args, final CallbackContext callbackContext) {
     mapCtrl.mPluginLayout.addPluginOverlay(this);
@@ -1277,6 +1303,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
 
             if (results.cameraPosition != null) {
               try {
+                map.stopAnimation();
                 map.moveCamera(CameraUpdateFactory.newCameraPosition(results.cameraPosition));
               } catch (Exception e) {
                 e.printStackTrace();
@@ -1659,7 +1686,6 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
         public void onResult(final PluginResult pluginResult) {
           if (finalCameraPosition.cameraBounds != null && ANIMATE_CAMERA_DONE.equals(pluginResult.getStrMessage())) {
 
-
             final Builder builder = CameraPosition.builder(map.getCameraPosition());
             if (mCameraPos.has("tilt")) {
               try {
@@ -1678,6 +1704,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
 
             CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngBounds(finalCameraPosition.cameraBounds, (int)(finalCameraPosition.cameraPadding * density));
             try {
+              map.stopAnimation();
               map.moveCamera(cameraUpdate);
             } catch (Exception e) {
               e.printStackTrace();
@@ -1692,7 +1719,8 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
                 map.moveCamera(CameraUpdateFactory.newCameraPosition(builder.build()));
               }
             });
-          } else {
+          } else if(!ANIMATE_CAMERA_CANCELED.equals( pluginResult.getStrMessage() )) {
+
             final Builder builder = CameraPosition.builder(map.getCameraPosition());
             if (mCameraPos.has("tilt")) {
               try {
@@ -1728,10 +1756,14 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
                 map.moveCamera(CameraUpdateFactory.newCameraPosition(builder.build()));
               }
             });
+          } else {
+            mCallbackContext.sendPluginResult(pluginResult);
+            return;
           }
           mCallbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK));
         }
       };
+
       if (mAction.equals("moveCamera")) {
         myMoveCamera(AsyncUpdateCameraPositionResult.cameraUpdate, myCallback);
       } else {
@@ -1773,8 +1805,18 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     this.activity.runOnUiThread(new Runnable() {
       @Override
       public void run() {
-        map.animateCamera(cameraUpdate);
-        callbackContext.success();
+        map.stopAnimation();
+        map.animateCamera(cameraUpdate, new GoogleMap.CancelableCallback() {
+          @Override
+          public void onFinish() {
+            callbackContext.success(ANIMATE_CAMERA_DONE);
+          }
+
+          @Override
+          public void onCancel() {
+            callbackContext.error(ANIMATE_CAMERA_CANCELED);
+          }
+        });
       }
     });
   }
@@ -1801,6 +1843,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
    */
   public void myMoveCamera(CameraUpdate cameraUpdate, CallbackContext callbackContext) {
     try {
+        map.stopAnimation();
         map.moveCamera(cameraUpdate);
     } catch (Exception e) {
         e.printStackTrace();
@@ -2021,13 +2064,14 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
 
       @Override
       public void onCancel() {
-        callbackContext.success(ANIMATE_CAMERA_CANCELED);
+        callbackContext.error(ANIMATE_CAMERA_CANCELED);
       }
     };
 
     this.activity.runOnUiThread(new Runnable() {
       @Override
       public void run() {
+        map.stopAnimation();
         if (durationMS > 0) {
           map.animateCamera(cameraUpdate, durationMS, callback);
         } else {
@@ -2855,6 +2899,8 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     }
     this.isDragging = false;
     onCameraEvent("camera_move_end");
+
+   // onCameraEvent("camera_idle");
   }
 
   @Override
@@ -3170,6 +3216,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     //Log.d("PluginMap", "serviceName = " + serviceName + ", pluginName = " + pluginName);
 
     try {
+        if(plugins == null) return null;
 
       if (plugins.containsKey(pluginName)) {
         //Log.d("PluginMap", "--> useCache");
@@ -3345,7 +3392,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
             if (data.has("path") || data.has("points")) {
               cum++;
             }
-            if (cum >= 4) {
+            if (cum >= 20) {
               cum = 0;
               micro = 36;
             }

@@ -40,6 +40,7 @@ public class PluginStreetViewPanorama extends MyPlugin implements
   private final String TAG = "StreetView";
   private String divId;
   private int viewDepth = 0;
+  private boolean interceptClickEnable = true;
 
   @Override
   public void initialize(CordovaInterface cordova, final CordovaWebView webView) {
@@ -60,6 +61,19 @@ public class PluginStreetViewPanorama extends MyPlugin implements
     return this.panoramaView;
   }
 
+  public void interceptClick(boolean e) {
+    interceptClickEnable = e;
+  }
+
+  public boolean isInterceptClickEnabled() {
+    return interceptClickEnable;
+  }
+  public void enableClickInterception(JSONArray args, final CallbackContext callbackContext) {
+    return;//to implement
+  }
+  public void disableClickInterception(JSONArray args, final CallbackContext callbackContext) {
+    return;//to implement
+  }
 
   public boolean getVisible() {
     return isVisible;
