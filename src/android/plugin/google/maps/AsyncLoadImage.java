@@ -112,53 +112,59 @@ public class AsyncLoadImage extends AsyncTask<Void, Void, AsyncLoadImage.AsyncLo
 
   protected AsyncLoadImageResult doInBackground(Void... params) {
 
-    Log.d("doInBackground getmage","");
+    try {
+      Log.d("doInBackground getmage", "");
 
-    int mWidth = mOptions.width;
-    int mHeight = mOptions.height;
-    String iconUrl = mOptions.url;
-    String orgIconUrl = iconUrl;
-    Bitmap image = null;
+      int mWidth = mOptions.width;
+      int mHeight = mOptions.height;
+      String iconUrl = mOptions.url;
+      String orgIconUrl = iconUrl;
+      Bitmap image = null;
 
-    if (iconUrl == null) {
-      return null;
-    }
+      if (iconUrl == null) {
+        return null;
+      }
 
-    String cacheKey = null;
-    cacheKey = getCacheKey(orgIconUrl, mWidth, mHeight);
+      String cacheKey = null;
+      cacheKey = getCacheKey(orgIconUrl, mWidth, mHeight);
 
-    image = getBitmapFromMemCache(cacheKey);
-    if (image != null) {
+      image = getBitmapFromMemCache(cacheKey);
+      if (image != null) {
+        AsyncLoadImageResult result = new AsyncLoadImageResult();
+        result.image = image;
+        result.cacheHit = true;
+        result.cacheKey = cacheKey;
+        return result;
+      }
+
+      if (iconUrl.indexOf("data:image/") == 0 && iconUrl.contains(";base64,")) {
+        String[] tmp = iconUrl.split(",");
+        image = PluginUtil.getBitmapFromBase64encodedImage(tmp[1]);
+      }
+
+      if (mWidth > 0 && mHeight > 0) {
+        mWidth = Math.round(mWidth * density);
+        mHeight = Math.round(mHeight * density);
+        image = PluginUtil.resizeBitmap(image, mWidth, mHeight);
+      } else {
+        image = PluginUtil.scaleBitmapForDevice(image);
+      }
+
       AsyncLoadImageResult result = new AsyncLoadImageResult();
       result.image = image;
       result.cacheHit = true;
-      result.cacheKey = cacheKey;
+
+      if (!mOptions.noCaching) {
+        result.cacheKey = cacheKey;
+        addBitmapToMemoryCache(cacheKey, image);
+      }
+
       return result;
+    } catch(Exception e) {
+      e.printStackTrace();
+
+      return null;
     }
-
-    if (iconUrl.indexOf("data:image/") == 0 && iconUrl.contains(";base64,")) {
-      String[] tmp = iconUrl.split(",");
-      image = PluginUtil.getBitmapFromBase64encodedImage(tmp[1]);
-    }
-
-    if (mWidth > 0 && mHeight > 0) {
-      mWidth = Math.round(mWidth * density);
-      mHeight = Math.round(mHeight * density);
-      image = PluginUtil.resizeBitmap(image, mWidth, mHeight);
-    } else {
-      image = PluginUtil.scaleBitmapForDevice(image);
-    }
-
-    AsyncLoadImageResult result = new AsyncLoadImageResult();
-    result.image = image;
-    result.cacheHit = true;
-
-    if (!mOptions.noCaching) {
-      result.cacheKey = cacheKey;
-      addBitmapToMemoryCache(cacheKey, image);
-    }
-
-    return result;
   }
 
 

@@ -305,7 +305,7 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
 
     // Log.d("remove", id);
 
-    setDisappearAnimation(marker, new PluginAsyncInterface(){
+    setDisappearAnimation(marker, null, new PluginAsyncInterface(){
 
       @Override
       public void onPostExecute(Object object) {
@@ -744,43 +744,42 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
   public void updateItem(final String id, JSONObject opts, final PluginAsyncInterface callbackContext) {
     final Marker marker = this.getMarker(id);
     if(marker != null) {
-      synchronized(marker) {
-        Iterator<String> it = opts.keys();
-        String hashCode = id.replace("marker_", "");
+      Iterator<String> it = opts.keys();
+      String hashCode = id.replace("marker_", "");
 
-        JSONObject result = new JSONObject();
+      JSONObject result = new JSONObject();
 
-        boolean hasIcon = opts.has("icon");
+      boolean hasIcon = opts.has("icon");
 
-        final CountDownLatch waiterIcon = new CountDownLatch(hasIcon ? 1 : 0);
+      final CountDownLatch waiterIcon = new CountDownLatch(hasIcon ? 1 : 0);
 
-        if (hasIcon) {
-          Bundle bundle = getBundleIcon(opts);
-          this.setIcon(marker, bundle, new PluginAsyncInterface() {
-            @Override
-            public void onPostExecute(final Object object) {
-              //Marker marker = (Marker) object;
-              waiterIcon.countDown();
-            }
-
-            @Override
-            public void onError(String errorMsg) {
-              waiterIcon.countDown();
-            }
-
-          });
-        }
-
-        try {
-          waiterIcon.await();
-        } catch (InterruptedException e) {
-          e.printStackTrace();
-        }
-
-        cordova.getActivity().runOnUiThread(new Runnable() {
+      if (hasIcon) {
+        Bundle bundle = getBundleIcon(opts);
+        this.setIcon(marker, bundle, new PluginAsyncInterface() {
           @Override
-          public void run() {
-            try {
+          public void onPostExecute(final Object object) {
+            //Marker marker = (Marker) object;
+            waiterIcon.countDown();
+          }
+
+          @Override
+          public void onError(String errorMsg) {
+            waiterIcon.countDown();
+          }
+
+        });
+      }
+
+      try {
+        waiterIcon.await();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+
+      cordova.getActivity().runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          try {
 
               while (it.hasNext()) {
                 String key = it.next();
@@ -824,27 +823,30 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
                 }
               }
 
-              boolean visible = true;
-              try {
-                visible = opts.has("visible") ? opts.getBoolean("visible") : true;
-              } catch (JSONException e) {
-                e.printStackTrace();
+
+            boolean visible = true;
+            float opacity = 1;
+            try {
+              visible = opts.has("visible") ? opts.getBoolean("visible") : true;
+              opacity = !visible ? 0 : (opts.has("opacity") ? (float) opts.getDouble("opacity") : marker.getAlpha());
+              if(opacity == 0) {
+                visible = false;
               }
 
-              try {
-                marker.setAlpha(!visible ? 0 : (opts.has("opacity") ? (float) opts.getDouble("opacity") : 1));
-              } catch (JSONException e) {
-                e.printStackTrace();
-              }
-
-              callbackContext.onPostExecute(prepareResponse(marker));
-            } catch (Exception e) {
+            } catch (JSONException e) {
               e.printStackTrace();
-              callbackContext.onError(e.toString());
             }
+
+            marker.setVisible(visible);
+            marker.setAlpha(opacity);
+
+            callbackContext.onPostExecute(prepareResponse(marker));
+          } catch (Exception e) {
+            e.printStackTrace();
+            callbackContext.onError(e.toString());
           }
-        });
-      }
+        }
+      });
 
     } else {
       callbackContext.onError("No marker anymore");
@@ -935,14 +937,14 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
     return bundle;
   }
 
-  private void setAppearAnimation(final Marker marker, final PluginAsyncInterface callback ) {
-    setScaleAnimation(marker, 1, callback);
+  private void setAppearAnimation(final Marker marker, final Float opacity, final PluginAsyncInterface callback ) {
+    setScaleAnimation(marker, opacity, 1, callback);
   }
-  private void setDisappearAnimation(final Marker marker, final PluginAsyncInterface callback ) {
-    setScaleAnimation(marker, -1, callback);
+  private void setDisappearAnimation(final Marker marker, final Float opacity, final PluginAsyncInterface callback ) {
+    setScaleAnimation(marker, opacity, -1, callback);
   }
 
-  private void setScaleAnimation(final Marker marker, int way, final PluginAsyncInterface callback) {
+  private void setScaleAnimation(final Marker marker, final Float opacity, int way, final PluginAsyncInterface callback) {
     final long startTime = SystemClock.uptimeMillis();
     final long duration = 200;
 
@@ -952,7 +954,7 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
 
         final String markerId = ((String) marker.getTag()); //markerTag can be null in some conditions
         if(markerId == null) {
-          callback.onError("no more marker");
+          if(callback != null) callback.onError("no more marker");
           return;
         }
 
@@ -1003,6 +1005,8 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
         final Handler handler = new Handler();
         final Interpolator interpolator = new LinearInterpolator();
 
+        final float finalOpacity = opacity!= null ? opacity : (marker != null ? marker.getAlpha() : 0);
+
         handler.post(new Runnable() {
           @Override
           public void run() {
@@ -1026,7 +1030,7 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
 
                   // int w = Math.max(10, (int) Math.round(progress * width));
                   // int h = Math.max(10, (int) Math.round(progress * height));
-                  float alpha = Math.min(1, 1 * progress);
+                  float alpha = Math.min(finalOpacity, 1 * progress);
 
                   animationProgress.put(markerId, new AnimationState(progress, way));
 
@@ -1079,6 +1083,8 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
       if (opts.has("position")) {
         JSONObject position = opts.getJSONObject("position");
         markerOptions.position(new LatLng(position.getDouble("lat"), position.getDouble("lng")));
+      } else {
+        markerOptions.position(new LatLng(0, 0));
       }
       if (opts.has("title")) {
         markerOptions.title(opts.getString("title"));
@@ -1112,12 +1118,12 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
       if (opts.has("icon")) {
         try {
           JSONObject icon = opts.getJSONObject("icon");
-          if (opts.has("anchor")) {
-            JSONObject anchor = icon.getJSONObject("anchor");
+          if (icon.has("anchor")) {
+            JSONArray anchor = icon.getJSONArray("anchor");
             properties.put("anchor", anchor);
           }
         } catch(Exception e) {
-          //
+          e.printStackTrace();
         }
       }
       if (opts.has("styles")) {
@@ -1143,11 +1149,9 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
         @Override
         public void run() {
           final Marker marker = map.addMarker(markerOptions);
-
-          synchronized (marker) {
-
+          if (marker != null) {
             marker.setTag("marker_" + hashCode);
-            marker.hideInfoWindow();
+            // marker.hideInfoWindow();
 
             // Store the marker
             synchronized (pluginMap.objects) {
@@ -1163,6 +1167,18 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
               e.printStackTrace();
             }
 
+            boolean visible = true;
+            float opacity = 1;
+            try {
+              visible = opts.has("visible") ? opts.getBoolean("visible") : true;
+              opacity = !visible ? 0 : (opts.has("opacity") ? (float) opts.getDouble("opacity") : 1);
+            } catch (JSONException e) {
+              e.printStackTrace();
+            }
+
+            float finalOpacity = opacity;
+            boolean finalVisible = visible;
+
             // Load icon
             if (opts.has("icon")) {
               //------------------------------
@@ -1174,17 +1190,14 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
                 @Override
                 public void onPostExecute(final Object object) {
                   Marker marker = (Marker) object;
-                  marker.setVisible(true);
+
 
                   if (!animation) {
-                    try {
-                      boolean visible = opts.getBoolean("visible") ? opts.getBoolean("visible") : true;
-                      marker.setAlpha(!visible ? 0 : (opts.has("opacity") ? (float) opts.getDouble("opacity") : 1));
-                    } catch (JSONException e) {
-                      e.printStackTrace();
-                    }
+                    marker.setAlpha(finalOpacity);
+                    marker.setVisible(finalVisible);
                   } else {
-                    setAppearAnimation(marker, null);
+                    marker.setVisible(finalVisible);
+                    setAppearAnimation(marker, finalOpacity, null);
                   }
 
                   callbackContext.onPostExecute(prepareResponse(marker));
@@ -1194,16 +1207,16 @@ public class PluginMarker extends MyPlugin implements MapElementInterface, MyPlu
                 public void onError(String errorMsg) {
                   callbackContext.onError(errorMsg);
                 }
-
               });
             } else {
+              marker.setAlpha(finalOpacity);
+              marker.setVisible(finalVisible);
               callbackContext.onPostExecute(prepareResponse(marker));
             }
           }
-
         }
       });
-    } catch (JSONException e) {
+    } catch (Exception e) {
       e.printStackTrace();
       callbackContext.onError(e.toString());
     }
