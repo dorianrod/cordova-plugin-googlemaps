@@ -7,9 +7,10 @@ var cordova_exec = require('cordova/exec'),
 
 var commandQueue = [];
 var _isWaitMethod = null;
+var _waitTimeout = null;
 var _isExecuting = false;
 var _executingCnt = 0;
-var MAX_EXECUTE_CNT = 10;
+var MAX_EXECUTE_CNT = 20;
 var _lastGetMapExecuted = 0;
 var _isResizeMapExecuting = false;
 
@@ -69,11 +70,12 @@ function execCmd(success, error, pluginName, methodName, args, execOptions) {
         // In order to prevent this error, insert small delays.
         var delay = 0;
         if (methodName === _isWaitMethod) {
-          if (_isWaitMethod === 'getMap' && Date.now() - _lastGetMapExecuted < 1500) {
+          if (_isWaitMethod === 'getMap' && !_lastGetMapExecuted && (Date.now() - _lastGetMapExecuted < 1500)) {
             delay = 1500;
           }
           _lastGetMapExecuted = Date.now();
           _isWaitMethod = null;
+          clearTimeout(_waitTimeout);
         }
         setTimeout(function() {
           _executingCnt--;
@@ -96,6 +98,7 @@ function execCmd(success, error, pluginName, methodName, args, execOptions) {
 
         if (methodName === _isWaitMethod) {
           _isWaitMethod = null;
+          clearTimeout(_waitTimeout);
         }
         _executingCnt--;
         common.nextTick(_exec);
@@ -113,6 +116,9 @@ function execCmd(success, error, pluginName, methodName, args, execOptions) {
   // it would cause many errors in native side, such as out-of-memory.
   //
   // In order to prevent these troubles, the maps plugin limits the number of execution is 10.
+  
+
+
   if (_isExecuting || _executingCnt >= MAX_EXECUTE_CNT || _isWaitMethod || commandQueue.length === 0) {
     return;
   }
@@ -163,6 +169,11 @@ function _exec() {
       // Some methods have to block other execution requests, such as `map.clear()`
       if (commandParams.execOptions.sync) {
         _isWaitMethod = methodName;
+
+        _waitTimeout = setTimeout(function() {
+          _isWaitMethod = null; //prevent block if never reached
+        }, 5000);
+
         cordova_exec.apply(this, commandParams.args);
         break;
       }
