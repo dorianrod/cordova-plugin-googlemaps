@@ -21,4 +21,8 @@ public interface IPluginView {
   void remove(JSONArray args, final CallbackContext callbackContext);
   void attachToWebView(JSONArray args, final CallbackContext callbackContext);
   void detachFromWebView(JSONArray args, final CallbackContext callbackContext);
+  void enableClickInterception(JSONArray args, final CallbackContext callbackContext);
+  void disableClickInterception(JSONArray args, final CallbackContext callbackContext);
+  boolean isInterceptClickEnabled();
+  void interceptClick(boolean b);
 }
