@@ -7,9 +7,11 @@ import android.util.Log;
 import com.google.android.gms.maps.model.Cap;
 import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.Dash;
+import com.google.android.gms.maps.model.Dot;
 import com.google.android.gms.maps.model.Gap;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PatternItem;
 import com.google.android.gms.maps.model.Polyline;
@@ -22,6 +24,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -34,6 +37,7 @@ class PolylineResult {
 
 public class PluginPolyline extends MyPlugin implements MapElementInterface, MyPluginInterface   {
 
+    protected final HashMap<String, ArrayList<String>> markerKeys = new HashMap<>();
 
   /**
    * Create polyline
@@ -53,19 +57,81 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
       callbackContext.onPostExecute(null);
       return;
     }
+
+
     pluginMap.objects.remove(id);
     pluginMap.objects.remove(id.replace("polyline_", "polyline_property_"));
     pluginMap.objects.remove(id.replace("polyline_", "polyline_bounds_"));
 
-    cordova.getActivity().runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        polyline.remove();
-        callbackContext.onPostExecute(null);
+
+      final CountDownLatch waiter = new CountDownLatch(2);
+
+      cordova.getActivity().runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+              try {
+                  polyline.remove();
+              } finally {
+                  waiter.countDown();
+              }
+          }
+      });
+
+      removePolylineMarkers(id, new PluginAsyncInterface() {
+          @Override
+          public void onPostExecute(Object object) {
+              waiter.countDown();
+          }
+
+          @Override
+          public void onError(String errorMsg) {
+              waiter.countDown();
+          }
+      });
+
+      try {
+          waiter.await();
+      } catch (InterruptedException e) {
+          e.printStackTrace();
       }
-    });
+
+      callbackContext.onPostExecute(null);
   }
 
+  void removePolylineMarkers(String id, PluginAsyncInterface callback) {
+      ArrayList<String> ids = markerKeys.get(id);
+
+      if (ids != null && ids.size() > 0) {
+          PluginMarker pluginMarker = (PluginMarker) pluginMap.getPluginInstance("Marker");
+
+          //Delete previous markers
+          if (ids != null) {
+              final CountDownLatch waiter = new CountDownLatch(ids.size());
+              for (int i = 0; i < ids.size(); i++) {
+                  pluginMarker.remove((String) ids.get(i), new PluginAsyncInterface() {
+
+                      @Override
+                      public void onPostExecute(Object object) {
+                          waiter.countDown();
+                      }
+
+                      @Override
+                      public void onError(String errorMsg) {
+                          waiter.countDown();
+                      }
+                  });
+              }
+              try {
+                  waiter.await();
+                  markerKeys.remove(id);
+              } catch (InterruptedException e) {
+                  e.printStackTrace();
+              }
+          }
+      }
+
+      callback.onPostExecute(null);
+  }
 
   void getPolyline(final JSONObject opts, final PluginAsyncInterface callbackContext) {
     try {
@@ -143,6 +209,8 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
                 }
             }
 
+            final CountDownLatch waiter = new CountDownLatch(1);
+
             cordova.getActivity().runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -155,13 +223,10 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
                             String key = it.next();
 
                             switch (key) {
-                                case "dash":
+                                case "pattern":
                                     PolylineOptions polyOptions = new PolylineOptions();
-                                    getDashPattern(opts, polyOptions);
+                                    getPattern(opts, polyOptions);
                                     polyline.setPattern(polyOptions.getPattern());
-                                    break;
-                                case "icons":
-                                   
                                     break;
                                 case "strokeColor":
                                     int color = PluginUtil.parsePluginColor(opts.getJSONArray(key));
@@ -202,33 +267,157 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
                             cachePolylineBounds(hashCode, result.bounds);
                         }
 
-                        callbackContext.onPostExecute(prepareResponse(polyline));
                     } catch (Exception e) {
 
                         e.printStackTrace();
-                        callbackContext.onError(e.toString());
+                    } finally {
+                        waiter.countDown();
                     }
                 }
             });
+
+            try {
+                waiter.await();
+            }catch(Exception e) {
+                e.printStackTrace();
+            }
+
+            updatePolylineIcons(opts, new PluginAsyncInterface() {
+
+                @Override
+                public void onPostExecute(Object object) {
+                    callbackContext.onPostExecute(prepareResponse(id));
+                }
+
+                @Override
+                public void onError(String errorMsg) {
+                    callbackContext.onError(errorMsg);
+                }
+            });
+
         }
     } else {
       callbackContext.onError("No polyline anymore");
     }
   }
 
-    public void getDashPattern(JSONObject opts, PolylineOptions polyOptions) {
+
+
+    public void updatePolylineIcons(JSONObject opts, PluginAsyncInterface callback) {
         try {
-            if(opts.has("dash") && opts.getBoolean("dash")) {
-                final PatternItem DASH = new Dash(20);
-                final PatternItem GAP = new Gap(20);
-                final List<PatternItem> pattern = Arrays.asList(GAP, DASH);
-                polyOptions.pattern(pattern);
+            PluginMarker pluginMarker = (PluginMarker) pluginMap.getPluginInstance("Marker");
+
+            String id = opts.getString("__pgmId");
+            final JSONArray icons = opts.has("icons") ? opts.getJSONArray("icons") : null;
+
+
+
+            final CountDownLatch waiter = new CountDownLatch((icons != null ? 1 + icons.length() : 0));
+
+            JSONArray strokeColor = opts.has("strokeColor") ? opts.getJSONArray("strokeColor") : null;
+            Float alpha = strokeColor != null && strokeColor.length() >= 3 ? (float) strokeColor.getDouble(3) / 255 : null;
+
+            ArrayList<String> ids = markerKeys.get(id);
+
+            if(alpha != null && ids != null && ids.size() > 0) {
+                synchronized(ids) {
+                    for(int i = 0; i < ids.size(); i++) {
+                        String idmarker = ids.get(i);
+                        Marker marker = pluginMarker.getMarker(idmarker);
+                        if(marker != null) {
+                            synchronized(marker) {
+                                cordova.getActivity().runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        marker.setAlpha(alpha);
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            //Create new markers
+            if (icons != null) {
+
+                ArrayList<String> markersIds = new ArrayList();
+
+                removePolylineMarkers(id, new PluginAsyncInterface() {
+                    @Override
+                    public void onPostExecute(Object object) {
+                        waiter.countDown();
+                    }
+
+                    @Override
+                    public void onError(String errorMsg) {
+                        waiter.countDown();
+                    }
+                });
+
+                for (int i = 0; i < icons.length(); i++) {
+                    try {
+                        String hashCode = id + "-" + i;
+
+                        JSONObject marker = icons.getJSONObject(i);
+                        if(alpha != null) {
+                            marker.put("opacity", alpha);
+                        }
+
+                        marker.put("__pgmId", "marker_" + hashCode);
+                        markersIds.add(marker.getString("__pgmId"));
+
+                        pluginMarker.createItem(hashCode, marker, new PluginAsyncInterface() {
+
+                            @Override
+                            public void onPostExecute(Object object) {
+                                waiter.countDown();
+                            }
+
+                            @Override
+                            public void onError(String errorMsg) {
+                                waiter.countDown();
+                            }
+                        });
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        waiter.countDown();
+                    }
+                }
+
+                markerKeys.put(id, markersIds);
+            }
+
+            waiter.await();
+
+
+            if(callback != null) callback.onPostExecute(null);
+        } catch(Exception e) {
+            e.printStackTrace();
+            if(callback != null) callback.onError(e.toString());
+        }
+    }
+
+    public void getPattern(JSONObject opts, PolylineOptions polyOptions) {
+        try {
+            if(opts.has("pattern")) {
+                String pattern = opts.getString("pattern");
+                List<PatternItem> patternItem = null;
+                if("dash".equals(pattern)) {
+                    patternItem = Arrays.asList(new Dash(20), new Gap(20));
+                } else {
+                    float strokeWidth = opts.has("strokeWidth") ? (float) (opts.getDouble("strokeWidth")) : 1;
+                    patternItem = Arrays.asList(new Dot(), new Gap(5 + strokeWidth));
+                }
+                if(patternItem != null) {
+                    polyOptions.pattern(patternItem);
+                }
             }
         } catch(Exception e) {
             e.printStackTrace();
         }
     }
-
   public void createItem(final String hashCode, JSONObject opts, final PluginAsyncInterface callbackContext) {
 
     self = this;
@@ -274,7 +463,26 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
           }
           properties.put("isVisible", polylineOptions.isVisible());
 
-          getDashPattern(opts, polylineOptions);
+            getPattern(opts, polylineOptions);
+
+            final CountDownLatch waiter = new CountDownLatch(1);
+            updatePolylineIcons(opts, new PluginAsyncInterface(){
+                @Override
+                public void onPostExecute(Object object) {
+                    waiter.countDown();
+                }
+
+                @Override
+                public void onError(String errorMsg) {
+                    waiter.countDown();
+                }
+            });
+
+            try {
+                waiter.await();
+            } catch(InterruptedException e) {
+                e.printStackTrace();
+            }
 
           // Since this plugin provide own click detection,
           // disable default clickable feature.
@@ -295,8 +503,8 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
 
               String propertyId = "polyline_property_" + hashCode;
               pluginMap.objects.put(propertyId, properties);
+              callbackContext.onPostExecute(prepareResponse(id));
 
-              callbackContext.onPostExecute(prepareResponse(polyline));
             }
           });
 
@@ -313,17 +521,20 @@ public class PluginPolyline extends MyPlugin implements MapElementInterface, MyP
     });
   }
 
+    private JSONObject prepareResponse(String polylineId) {
+        final JSONObject result = new JSONObject();
+
+        try {
+            result.put("__pgmId", polylineId);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return result;
+    }
 
   private JSONObject prepareResponse(Polyline polyline) {
-    final JSONObject result = new JSONObject();
     final String polylineId = "polyline_" + (String) polyline.getTag(); //"polyline_" + polyline.hashCode();
-
-    try {
-      result.put("__pgmId", polylineId);
-    } catch (JSONException e) {
-      e.printStackTrace();
-    }
-    return result;
+    return prepareResponse(polylineId);
   }
 }
 

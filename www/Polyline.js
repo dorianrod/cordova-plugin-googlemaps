@@ -31,6 +31,9 @@ Polyline.prototype.getVisible = function () {
 Polyline.prototype.getClickable = function () {
   return this.get('clickable');
 };
+Polyline.prototype.getPattern = function () {
+  return this.get('pattern');
+};
 Polyline.prototype.getGeodesic = function () {
   return this.get('geodesic');
 };
@@ -44,6 +47,7 @@ Polyline.prototype.getOptions = function() {
     'visible': self.getVisible(),
     'zIndex': self.getZIndex(),
     'icons': self.getIcons(),
+    'pattern': self.getPattern(),
     'clickable': self.getClickable(),
     'strokeWidth': self.getStrokeWidth(),
     'strokeColor': self.getStrokeColor(),
