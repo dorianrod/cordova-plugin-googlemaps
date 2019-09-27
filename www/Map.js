@@ -16,6 +16,8 @@
 	var list = this.queue[type] || [];
 	list.push(obj);
 	this.queue[type] = list;
+
+	console.log("GMAP ObjectQueue addObject", this, obj, list);
   }
   ObjectQueue.prototype.removeObject = function(type, id) {
 	var i = this.getObjIndex(type, {
@@ -1062,8 +1064,11 @@
   
   Map.prototype.batch = function(groups, callback) {
 	var map = this;
+
+	console.log("GMAP batch", groups, JSON.stringify(groups).length);
   
 	this.exec.call(map, function(result) {
+		console.log("GMAP batch result", result);
 		var resMarkers = result.markers || [];
 		var resPolylines = result.polylines || [];
 
@@ -1143,6 +1148,7 @@
   }
   
   Map.prototype.addMarker = function(markerOptions) {
+	  return null;
 	var marker = getMarker(this, markerOptions);
 	this.addObject("markers", marker.getOptions());
 	return marker;

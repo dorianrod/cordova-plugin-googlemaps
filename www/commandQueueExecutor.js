@@ -166,6 +166,8 @@ function _exec() {
     }
 
     try {
+      console.log("GMAP commandExecutor", JSON.stringify(commandParams.args).length);
+
       // Some methods have to block other execution requests, such as `map.clear()`
       if (commandParams.execOptions.sync) {
         _isWaitMethod = methodName;
@@ -179,6 +181,7 @@ function _exec() {
       }
       cordova_exec.apply(this, commandParams.args);
     } catch(e) {
+      console.error("GMAP commandExecutor ERROR", e);
       console.error(e);
     }
   }
