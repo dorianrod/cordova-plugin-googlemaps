@@ -1148,7 +1148,6 @@
   }
   
   Map.prototype.addMarker = function(markerOptions) {
-	  return null;
 	var marker = getMarker(this, markerOptions);
 	this.addObject("markers", marker.getOptions());
 	return marker;
