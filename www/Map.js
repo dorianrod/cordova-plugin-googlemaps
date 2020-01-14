@@ -38,7 +38,7 @@
 	}
   }
   ObjectQueue.prototype.getObjIndex = function(type, obj) {
-	let list = this.queue[type] || [];
+	var list = this.queue[type] || [];
 	for(var i = 0; i < list.length; i++) {
 	  if(list[i].__pgmId === obj.__pgmId && obj.__pgmId) {
 		return i;
@@ -49,7 +49,7 @@
   ObjectQueue.prototype.updateObject = function(type, obj) {
 	var i = this.getObjIndex(type, obj);
 	if(i != null) {
-	  let list = this.queue[type] || [];
+	  var list = this.queue[type] || [];
 	  if(!list[i]._removed) {
 		list[i] = Object.assign(list[i], obj);
 	  }
@@ -61,7 +61,7 @@
 	this.queue = {};
   }
   ObjectQueue.prototype.get = function() {
-	let queue = Object.assign({}, this.queue);
+	var queue = Object.assign({}, this.queue);
 	this.clear();
 	return queue;
   }
@@ -116,7 +116,7 @@
 	  self.exec.call(self, null, null, self.__pgmId, 'setActiveMarkerId', [newMarkerId]);
 	});
   
-	let debounceV = (opts ? opts.debounce : 0) || 200;
+	var debounceV = (opts ? opts.debounce : 0) || 200;
   
 	self.batchQueue = common.debounce(self.batchQueue, debounceV, false, self);
   };
@@ -709,7 +709,7 @@
   
   
 	var resolver = function(resolve, reject) {
-		setTimeout(()=>{
+		setTimeout(function() {
 			self.exec.call(self,
 				resolve.bind(self),
 				reject.bind(self),
@@ -1013,7 +1013,7 @@
   
   Map.prototype.addPolyline = function(polyOptions) {
 	var obj = getPolyline(this, polyOptions);
-
+	
 	var polyProps = Object.assign(obj.getOptions(), {
 		points: polyOptions.points,
 		path: polyOptions.path

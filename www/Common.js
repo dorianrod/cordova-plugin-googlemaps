@@ -264,7 +264,7 @@
   }
 
   function filterChildrenNodeByClass(node, cls, forceCls) {
-    let notFollow = testClass(node, cls);
+    var notFollow = testClass(node, cls);
     if(notFollow) {
       if(forceCls) {
         if(!testClass(node, forceCls)) {
