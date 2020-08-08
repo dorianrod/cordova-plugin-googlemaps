@@ -42,6 +42,7 @@
   
     // Indicate the native timer is stopped or not.
     self.set('isSuspended', false);
+    self.set('enableInterceptions', true);
   
     // Cache for updateMapPositionOnly
     self.prevMapRects = {};
@@ -126,6 +127,20 @@
         cordova_exec(null, null, 'CordovaGoogleMaps', 'pause', []);
       } else {
         cordova_exec(null, null, 'CordovaGoogleMaps', 'resume', []);
+      }
+    });
+
+    self.on('enableInterceptions_changed', function(oldValue, newValue) {
+      var mapIDS = Object.keys(self.MAPS) || [];
+      for(var mapId in self.MAPS) {
+        var map = self.MAPS[mapId];
+        if(map) {
+          if (newValue) {
+            cordova_exec(null, null, map.__pgmId, 'enableClickInterception', []);
+          } else {
+            cordova_exec(null, null, map.__pgmId, 'disableClickInterception', []);
+          }
+        }
       }
     });
   }
@@ -368,6 +383,16 @@
   };
   
   
+  CordovaGoogleMaps.prototype.enableClickInterception = function(b) {
+    var self = this;
+    self.set('enableInterceptions', !!b);
+  };
+  
+  CordovaGoogleMaps.prototype.resume = function() {
+    var self = this;
+    self.set('isSuspended', false);
+  };
+  
   CordovaGoogleMaps.prototype.pause = function() {
     var self = this;
   
@@ -376,16 +401,13 @@
     self.isChecking = false;
   };
   
-  CordovaGoogleMaps.prototype.resume = function() {
-    var self = this;
-    self.set('isSuspended', false);
-  };
-  
-  
+
   // If the `transitionend` event is ocurred on the observed element,
   // adjust the position and size of the map view
   
   CordovaGoogleMaps.prototype.followMaps = function(evt) {
+    return; //DRD: no need to follow, we do it in app when needed
+    
     var self = this;
     if (self.MAP_CNT === 0) {
       return;
@@ -407,6 +429,9 @@
   // CSS event `transitionend` is fired even the target dom element is still moving.
   // In order to detect 'correct demention after the transform', wait until stable.
   CordovaGoogleMaps.prototype.onTransitionEnd = function(evt) {
+    return; //DRD: no need to follow, we do it in app when needed
+
+    /*
     var self = this;
     if (self.MAP_CNT === 0 || !evt) {
       return;
@@ -420,7 +445,7 @@
     self.transformTargets[elemId] = {left: -1, top: -1, right: -1, bottom: -1, finish: false, target: target};
     if (!self.transitionEndTimer) {
       self.transitionEndTimer = setTimeout(self.detectTransitionFinish.bind(self), 100);
-    }
+    }*/
   };
   
   CordovaGoogleMaps.prototype.detectTransitionFinish = function() {

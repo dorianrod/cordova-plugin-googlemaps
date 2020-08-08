@@ -114,6 +114,8 @@ if (!cordova) {
 
     /** @namespace plugin.google.maps.Map */
     Map: {
+      enableClickInterception: cordovaGoogleMaps.enableClickInterception.bind(cordovaGoogleMaps),
+
       /**
        * @function getMap
        * @memberof plugin.google.maps.Map

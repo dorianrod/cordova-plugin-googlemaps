@@ -9,6 +9,10 @@ var LocationService = function(exec) {
   }
   return {
     hasPermission: function(callback, errorCallback) {
+      if(callback) callback();
+      return true;
+      /*
+      //
       var self = this;
 
       var resolver = function(resolve, reject) {
@@ -33,9 +37,13 @@ var LocationService = function(exec) {
         return self;
       } else {
         return new Promise(resolver);
-      }
+      }*/
     },
     getMyLocation: function(params, success_callback, errorCallback) {
+      if(success_callback) success_callback();
+      return null;
+
+      /*
       var self = this;
       var args = [params || {}, success_callback || null, errorCallback];
       if (typeof args[0] === 'function') {
@@ -71,7 +79,7 @@ var LocationService = function(exec) {
         return self;
       } else {
         return new Promise(resolver);
-      }
+      }*/
     }
   };
 };

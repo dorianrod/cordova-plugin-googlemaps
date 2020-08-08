@@ -649,7 +649,7 @@ public class MyPluginLayout extends FrameLayout implements ViewTreeObserver.OnSc
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent event) {
-      if (pluginOverlays == null || pluginOverlays.size() == 0) {
+      if(pluginOverlays == null || pluginOverlays.size() == 0) {
         return false;
       }
       MyPluginLayout.this.stopFlag = true;
